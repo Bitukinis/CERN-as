@@ -1,5 +1,9 @@
 import pandas as pd
 import os
+import matplotlib.pyplot as plt
+
+#! cd "c:\Users\augus\Desktop\Python\Augustinas_Mockevicius\Graph builder for lab data project" python GraphBuilder.py
+#! THIS INTO TERMINAL, TO OPEN THE SCRIPT AND RUN IT!!!!
 
 
 def load_csv(filepath: str) -> pd.DataFrame:
@@ -24,13 +28,14 @@ def choose_csv_file(folder_path: str) -> str:
     """
     Let the user choose a CSV file from a given folder.
     Returns the full path to the chosen CSV file.
+    User can enter "cancel" or "q" to exit the process.
     """
     if not os.path.isdir(folder_path):
         raise NotADirectoryError(f"Not a valid folder: {folder_path}")
 
     print(f"\nLooking for CSV files in: {folder_path}")
 
-    # Get all .csv files in folder (case-insensitive)
+    # Gathers all .csv files in folder
     csv_files = [f for f in os.listdir(folder_path) if f.lower().endswith(".csv")]
 
     if not csv_files:
@@ -41,7 +46,12 @@ def choose_csv_file(folder_path: str) -> str:
         print(f"{i}: {fname}")
 
     while True:
-        choice = input("\nEnter the number of the CSV you want to use: ").strip()
+        choice = input("\nEnter the number of the CSV you want to use (or 'q', 'cancel', 'quit'): ").strip().lower()
+
+        if choice in ["cancel", "q", "quit"]:
+            print("\nProcess cancelled. Exiting...")
+            exit()
+
         try:
             idx = int(choice)
             if 0 <= idx < len(csv_files):
@@ -54,6 +64,94 @@ def choose_csv_file(folder_path: str) -> str:
 
     full_path = os.path.join(folder_path, chosen_file)
     return full_path
+
+
+def choose_axes(df: pd.DataFrame):
+    """
+    Let the user choose which column is X and which column(s) are Y.
+    Returns (x_column_name, [list_of_y_column_names]).
+    """
+    print("\nColumns detected:")
+    for i, col in enumerate(df.columns):
+        print(f"{i}: {col}")
+
+    # Choose X axis
+    while True:
+        x_choice = input("\nEnter the column number for the X axis: ").strip()
+        try:
+            x_idx = int(x_choice)
+            if 0 <= x_idx < len(df.columns):
+                x_col = df.columns[x_idx]
+                break
+            else:
+                print(f"Please enter a number between 0 and {len(df.columns) - 1}.")
+        except ValueError:
+            print("That is not a valid number. Try again.")
+
+    # Choose Y axes (can be multiple, comma separated)
+    while True:
+        y_choice = input("Enter column number(s) for Y axis data (comma separated, e.g. 1,2,3): ").strip()
+        try:
+            indices = [int(x.strip()) for x in y_choice.split(",")]
+            if not indices:
+                print("You must choose at least one Y column.")
+                continue
+
+            invalid = [i for i in indices if i < 0 or i >= len(df.columns)]
+            if invalid:
+                print(f"Invalid indices: {invalid}. Try again.")
+                continue
+
+            # Remove duplicates, keep order
+            y_indices = []
+            for i in indices:
+                if i not in y_indices:
+                    y_indices.append(i)
+
+            # Do not allow X column to be in Y list
+            y_indices = [i for i in y_indices if i != x_idx]
+            if not y_indices:
+                print("Y columns cannot be only the same as X. Choose at least one different column.")
+                continue
+
+            y_cols = [df.columns[i] for i in y_indices]
+            break
+        except ValueError:
+            print("Could not parse that. Use numbers separated by commas.")
+
+    return x_col, y_cols
+
+def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
+    """
+    Plot selected X and Y columns.
+    """
+    print(f"\nPlotting X: {x_col}")
+    print(f"Plotting Y columns: {', '.join(y_cols)}")
+
+    # Extract X as numeric
+    try:
+        x = pd.to_numeric(df[x_col], errors="coerce")
+    except Exception as e:
+        raise ValueError(f"Could not convert X column to numeric: {e}")
+
+    plt.figure(figsize=(8, 5))
+
+    for y_col in y_cols:
+        try:
+            y = pd.to_numeric(df[y_col], errors="coerce")
+        except Exception as e:
+            print(f"Skipping column {y_col}: could not convert to numeric. Error: {e}")
+            continue
+
+        plt.plot(x, y, marker="o", linestyle="-", label=y_col)
+
+    plt.xlabel(x_col)
+    plt.ylabel("Value")
+    plt.title("Lab data plot")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 
 def main():
@@ -71,23 +169,42 @@ def main():
     if folder_path == "":
         folder_path = script_dir
 
-    try:
-        filepath = choose_csv_file(folder_path)
-        df = load_csv(filepath)
-    except Exception as e:
-        print(f"\nError: {e}")
-        return
+    while True:
+        try:
+            filepath = choose_csv_file(folder_path)
+            df = load_csv(filepath)
+        except Exception as e:
+            print(f"\nError: {e}")
+            return
 
-    print(f"\nUsing file: {filepath}")
-    print("\nFile loaded successfully.")
-    print("First few rows of your data:")
-    print(df.head())
+        print(f"\nFile selected: {filepath}")
+        print("\nFirst few rows of this file:")
+        print(df.head())
 
-    print("\nColumns detected:")
+        print("\n" + "=" * 50)
+        proceed = input("Do you want to proceed using this file? (Y/N): ").strip().upper()
+
+        if proceed == "Y":
+            print("\nProceeding with the data...")
+            break
+        elif proceed == "N":
+            print("Let's choose a different file.\n")
+        else:
+            print("Please enter Y or N.\n")
+
+    
+    # Show updated columns
+    print("\n" + "=" * 50)
+    print("Updated columns in your data:")
     for i, col in enumerate(df.columns):
         print(f"{i}: {col}")
+    print("=" * 50)
 
-    print(f"\nDataFrame shape: {df.shape}")
+    # Choose axes and plot
+    x_col, y_cols = choose_axes(df)
+    plot_data(df, x_col, y_cols)
+
+    print("\nDone.")
 
 
 if __name__ == "__main__":
