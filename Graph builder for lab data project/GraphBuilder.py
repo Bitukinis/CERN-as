@@ -1,8 +1,11 @@
 import pandas as pd
 import os
+import subprocess
+import sys
+import re
 import matplotlib.pyplot as plt
 
-#! cd "c:\Users\augus\Desktop\Python\Augustinas_Mockevicius\Graph builder for lab data project" python GraphBuilder.py
+#! cd "c:\Users\augus\Desktop\Python\Augustinas_Mockevicius\Graph builder for lab data project\Seperated" python GraphBuilder.py
 #! THIS INTO TERMINAL, TO OPEN THE SCRIPT AND RUN IT!!!!
 
 
@@ -111,7 +114,7 @@ def choose_axes(df: pd.DataFrame):
             # Do not allow X column to be in Y list
             y_indices = [i for i in y_indices if i != x_idx]
             if not y_indices:
-                print("Y columns cannot be only the same as X. Choose at least one different column.")
+                print("Y columns cannot be the same as X. Choose a different column.")
                 continue
 
             y_cols = [df.columns[i] for i in y_indices]
@@ -172,10 +175,66 @@ def main():
     while True:
         try:
             filepath = choose_csv_file(folder_path)
-            df = load_csv(filepath)
         except Exception as e:
-            print(f"\nError: {e}")
+            print(f"\nError selecting file: {e}")
             return
+
+        # Attempt to load the CSV. If loading fails or the file looks malformed
+        # (contains literal "\\t" sequences or parses into a single column
+        # with embedded whitespace), run the `fix_csv.py` helper to preprocess it
+        # into a clean, comma-separated file and load that instead.
+        need_fix = False
+        try:
+            df = load_csv(filepath)
+        except Exception:
+            need_fix = True
+
+        # Inspect raw file for explicit '\\t' sequences or suspicious single-column parse
+        try:
+            with open(filepath, 'r', encoding='utf-8', errors='replace') as fh:
+                raw_text = fh.read()
+            if "\\t" in raw_text:
+                need_fix = True
+        except Exception:
+            # If reading fails, prefer to attempt fix
+            need_fix = True
+
+        if not need_fix:
+            # If df has only one column but entries contain whitespace, it's likely mis-parsed
+            if df is not None and df.shape[1] == 1:
+                sample = df.iloc[0, 0]
+                if isinstance(sample, str) and re.search(r"\s+", sample):
+                    need_fix = True
+
+        if need_fix:
+            print("\nFile appears malformed — running preprocessor (fix_csv.py) to clean it up...")
+            fix_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fix_csv.py")
+            if not os.path.isfile(fix_script):
+                print(f"Preprocessor not found: {fix_script}")
+                return
+
+            # Run fix_csv.py to create a separated file in Seperated/ by default
+            cmd = [sys.executable, fix_script, filepath, "--replace-literal-tabs", "--group-by-header"]
+            try:
+                subprocess.run(cmd, check=True)
+            except subprocess.CalledProcessError as e:
+                print(f"Preprocessing failed: {e}")
+                return
+
+            # Load from the Seperated output file
+            separated_dir = os.path.join(os.path.dirname(filepath), "Seperated")
+            base = os.path.splitext(os.path.basename(filepath))[0]
+            new_path = os.path.join(separated_dir, base + "_comma" + os.path.splitext(filepath)[1])
+            if not os.path.isfile(new_path):
+                print(f"Expected preprocessed file not found: {new_path}")
+                return
+
+            try:
+                df = load_csv(new_path)
+                filepath = new_path
+            except Exception as e:
+                print(f"Could not load preprocessed file: {e}")
+                return
 
         print(f"\nFile selected: {filepath}")
         print("\nFirst few rows of this file:")
