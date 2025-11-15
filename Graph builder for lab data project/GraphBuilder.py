@@ -4,9 +4,16 @@ import subprocess
 import sys
 import re
 import matplotlib.pyplot as plt
+import numpy as np
 
-#! cd "c:\Users\augus\Desktop\Python\Augustinas_Mockevicius\Graph builder for lab data project\Seperated" python GraphBuilder.py
-#! THIS INTO TERMINAL, TO OPEN THE SCRIPT AND RUN IT!!!!
+#! Run this in terminal to seperate variables in file:
+
+#! fix_csv.py File_Name --group-by-header --replace-literal-tabs --inplace
+
+#! run this to to open the file containing the script and run it:
+
+#! cd "c:\Users\augus\Desktop\Python\Augustinas_Mockevicius\Graph builder for lab data project" python GraphBuilder.py
+
 
 
 def load_csv(filepath: str) -> pd.DataFrame:
@@ -93,7 +100,7 @@ def choose_axes(df: pd.DataFrame):
 
     # Choose Y axes (can be multiple, comma separated)
     while True:
-        y_choice = input("Enter column number(s) for Y axis data (comma separated, e.g. 1,2,3): ").strip()
+        y_choice = input("Enter column number(s) for Y axis data (comma separated): ").strip()
         try:
             indices = [int(x.strip()) for x in y_choice.split(",")]
             if not indices:
@@ -124,36 +131,374 @@ def choose_axes(df: pd.DataFrame):
 
     return x_col, y_cols
 
+
+def show_summary_stats(df: pd.DataFrame, numeric_cols: list):
+    """
+    Display summary statistics (min, max, mean, median, std) for numeric columns.
+    User chooses which statistics to display via comma-separated selection (e.g., 1,3,5).
+    Optionally compute linear slope(s) (y = m*x + b) between a chosen X column and one or more Y columns.
+    """
+    print("\n" + "=" * 50)
+    print("SUMMARY STATISTICS")
+    print("=" * 50)
+
+    print("\nWhich statistics would you like to see?")
+    print("1: Minimum")
+    print("2: Maximum")
+    print("3: Mean")
+    print("4: Median")
+    print("5: Standard deviation")
+    print("6: All statistics")
+    print("7: Compute slope(s) for chosen X and Y columns")
+    print("\nEnter choice(s), comma-separated.")
+    print("Or press Enter to skip statistics")
+
+    choice = input("\nEnter your choice: ").strip()
+    if choice == "":
+        return
+
+    stats_list = ["min", "max", "mean", "median", "std"]
+    selected = []
+    slope_requested = False
+
+    # Parse comma-separated numbers
+    try:
+        indices = [int(x.strip()) for x in choice.split(",")]
+    except ValueError:
+        print("Invalid input. Could not parse numbers.")
+        return
+
+    if 6 in indices:
+        selected = stats_list.copy()
+
+    for idx in indices:
+        if idx == 6:
+            continue
+        if idx == 7:
+            slope_requested = True
+            continue
+        if 1 <= idx <= 5:
+            stat_name = stats_list[idx - 1]
+            if stat_name not in selected:
+                selected.append(stat_name)
+        else:
+            print(f"Warning: {idx} is not a valid choice (1-7). Skipping.")
+
+    if not selected and not slope_requested:
+        print("No valid statistics selected.")
+        return
+
+    # Compute and store chosen statistics for numeric columns
+    stats_results = {}
+    for col in numeric_cols:
+        try:
+            data = pd.to_numeric(df[col], errors="coerce").dropna()
+            if len(data) == 0:
+                print(f"\n{col}: (no numeric data)")
+                continue
+            col_stats = {}
+            if "min" in selected:
+                col_stats['min'] = data.min()
+            if "max" in selected:
+                col_stats['max'] = data.max()
+            if "mean" in selected:
+                col_stats['mean'] = data.mean()
+            if "median" in selected:
+                col_stats['median'] = data.median()
+            if "std" in selected:
+                col_stats['std'] = data.std()
+
+            # Print to console as before
+            print(f"\n{col}:")
+            for k, v in col_stats.items():
+                label = k.capitalize()
+                print(f"  {label}: {v:.6g}")
+
+            stats_results[col] = col_stats
+        except Exception as e:
+            print(f"\n{col}: Could not compute statistics ({e})")
+
+    # If slope computation requested, prompt for X and Y columns and compute
+    if slope_requested:
+        print("\nSLOPE COMPUTATION")
+        print("Available columns:")
+        for i, col in enumerate(df.columns):
+            print(f"{i}: {col}")
+
+        # Choose X axis
+        while True:
+            x_choice = input("\nEnter the column number to use as X for slope calculation (or 'c' to cancel): ").strip()
+            if x_choice.lower() in ["c", "cancel"]:
+                print("Slope computation cancelled.")
+                return
+            try:
+                x_idx = int(x_choice)
+                if 0 <= x_idx < len(df.columns):
+                    x_col = df.columns[x_idx]
+                    break
+                else:
+                    print(f"Please enter a number between 0 and {len(df.columns) - 1}.")
+            except ValueError:
+                print("That is not a valid number. Try again or enter 'c' to cancel.")
+
+        # Choose Y axes (one or multiple)
+        while True:
+            y_choice = input("Enter column number(s) for Y (comma separated) or 'c' to cancel: ").strip()
+            if y_choice.lower() in ["c", "cancel"]:
+                print("Slope computation cancelled.")
+                return
+            try:
+                y_indices = [int(x.strip()) for x in y_choice.split(",")]
+                # Validate indices
+                invalid = [i for i in y_indices if i < 0 or i >= len(df.columns)]
+                if invalid:
+                    print(f"Invalid indices: {invalid}. Try again.")
+                    continue
+                # Remove X if present in Y list
+                y_indices = [i for i in y_indices if i != x_idx]
+                if not y_indices:
+                    print("Y columns cannot be the same as X. Choose different column(s).")
+                    continue
+                y_cols = [df.columns[i] for i in y_indices]
+                break
+            except ValueError:
+                print("Could not parse that. Use numbers separated by commas.")
+
+        # Compute slopes for each selected Y
+        for ycol in y_cols:
+            try:
+                valid = df[[x_col, ycol]].apply(pd.to_numeric, errors="coerce").dropna()
+                if valid.empty:
+                    print(f"\n{ycol}: (no numeric data after alignment with X)")
+                    continue
+                x = valid[x_col].values
+                y = valid[ycol].values
+                # Fit line
+                slope, intercept = np.polyfit(x, y, 1)
+                # Compute R^2
+                y_pred = slope * x + intercept
+                ss_res = ((y - y_pred) ** 2).sum()
+                ss_tot = ((y - y.mean()) ** 2).sum()
+                r2 = 1.0 - ss_res / ss_tot if ss_tot != 0 else float('nan')
+                print(f"\n{ycol} vs {x_col}:")
+                print(f"  Slope:     {slope:.6g}")
+                print(f"  Intercept: {intercept:.6g}")
+                if not (r2 != r2):  # check for NaN
+                    print(f"  R^2:       {r2:.6g}")
+            except Exception as e:
+                print(f"\n{ycol}: Could not compute slope ({e})")
+
+    # Return selected stat keys and numeric results so the caller can annotate plots
+    return selected, stats_results
+
+
+def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
+    """
+    Allow user to filter data by condition(s) to select points of interest.
+    Returns the filtered DataFrame.
+    """
+    print("\n" + "=" * 50)
+    print("FILTER DATA (Points of Interest)")
+    print("=" * 50)
+    
+    filter_choice = input("\nDo you want to filter data by a condition? (Y/N): ").strip().upper()
+    if filter_choice != "Y":
+        return df
+    
+    all_cols = [x_col] + y_cols
+    print("\nAvailable columns:")
+    for i, col in enumerate(all_cols):
+        print(f"{i}: {col}")
+    
+    col_idx = input("\nEnter column number to filter on: ").strip()
+    try:
+        col_idx = int(col_idx)
+        if col_idx < 0 or col_idx >= len(all_cols):
+            print("Invalid column index.")
+            return df
+        filter_col = all_cols[col_idx]
+    except ValueError:
+        print("Invalid input.")
+        return df
+    
+    print("\nFilter operators:")
+    print("1: > (greater than)")
+    print("2: < (less than)")
+    print("3: >= (greater or equal)")
+    print("4: <= (less or equal)")
+    print("5: == (equal to)")
+    print("6: != (not equal to)")
+    
+    op_choice = input("\nEnter operator (1-6): ").strip()
+    op_map = {"1": ">", "2": "<", "3": ">=", "4": "<=", "5": "==", "6": "!="}
+    op = op_map.get(op_choice)
+    if not op:
+        print("Invalid operator.")
+        return df
+    
+    value_str = input(f"Enter value to compare {filter_col} {op} : ").strip()
+    try:
+        value = float(value_str)
+    except ValueError:
+        print("Invalid value.")
+        return df
+    
+    # Apply filter
+    col_data = pd.to_numeric(df[filter_col], errors="coerce")
+    if op == ">":
+        mask = col_data > value
+    elif op == "<":
+        mask = col_data < value
+    elif op == ">=":
+        mask = col_data >= value
+    elif op == "<=":
+        mask = col_data <= value
+    elif op == "==":
+        mask = col_data == value
+    elif op == "!=":
+        mask = col_data != value
+    
+    filtered_df = df[mask].reset_index(drop=True)
+    print(f"\nFiltered: {len(filtered_df)} of {len(df)} rows match {filter_col} {op} {value}")
+    return filtered_df
+
+
 def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     """
-    Plot selected X and Y columns.
+    Plot selected X and Y columns with multiple plot types and enhancements.
     """
     print(f"\nPlotting X: {x_col}")
     print(f"Plotting Y columns: {', '.join(y_cols)}")
 
+    # Choose plot type
+    print("\nPlot type options:")
+    print("1: Line plot (default)")
+    print("2: Scatter plot")
+    print("3: Bar chart")
+    print("4: Histogram")
+    
+    plot_choice = input("\nEnter plot type (1-4, default 1): ").strip() or "1"
+    plot_type = {"1": "line", "2": "scatter", "3": "bar", "4": "histogram"}.get(plot_choice, "line")
+    
+    # Ask about trend line
+    trend_choice = None
+    if plot_type in ["line", "scatter"]:
+        trend_choice = input("Add trend line? (1=Linear, 2=Polynomial, 0=No): ").strip() or "0"
+    
+    # Ask about dual axis
+    dual_axis = False
+    if len(y_cols) > 1 and plot_type == "line":
+        dual_choice = input("Use dual Y-axis for different scales? (Y/N): ").strip().upper()
+        dual_axis = (dual_choice == "Y")
+    
     # Extract X as numeric
     try:
         x = pd.to_numeric(df[x_col], errors="coerce")
     except Exception as e:
         raise ValueError(f"Could not convert X column to numeric: {e}")
 
-    plt.figure(figsize=(8, 5))
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+    ax2 = None
+    
+    colors = plt.cm.tab10(np.linspace(0, 1, len(y_cols)))
 
-    for y_col in y_cols:
+    for idx, y_col in enumerate(y_cols):
         try:
             y = pd.to_numeric(df[y_col], errors="coerce")
         except Exception as e:
             print(f"Skipping column {y_col}: could not convert to numeric. Error: {e}")
             continue
+        
+        # Choose axis
+        current_ax = ax1
+        if dual_axis and idx > 0:
+            if ax2 is None:
+                ax2 = ax1.twinx()
+            current_ax = ax2
 
-        plt.plot(x, y, marker="o", linestyle="-", label=y_col)
+        # Plot based on type
+        if plot_type == "line":
+            current_ax.plot(x, y, marker="o", linestyle="-", label=y_col, color=colors[idx])
+            
+            # Add trend line if requested
+            if trend_choice == "1":
+                # Align numeric x and y values
+                valid_xy = pd.concat([x, y], axis=1).apply(pd.to_numeric, errors="coerce").dropna()
+                if len(valid_xy) > 1:
+                    xv = valid_xy.iloc[:, 0].values
+                    yv = valid_xy.iloc[:, 1].values
+                    slope, intercept = np.polyfit(xv, yv, 1)
+                    p = np.poly1d([slope, intercept])
+                    x_trend = np.linspace(xv.min(), xv.max(), 100)
+                    current_ax.plot(x_trend, p(x_trend), "--", alpha=0.7, color=colors[idx], label=f"{y_col} (linear fit)")
+                    # Annotate slope/intercept on plot (axes coords)
+                    txt = f"m={slope:.4g}, b={intercept:.4g}"
+                    # compute a vertical offset per series to avoid overlaps
+                    y_offset = 0.95 - (idx * 0.05)
+                    current_ax.text(0.02, y_offset, txt, transform=current_ax.transAxes,
+                                    color=colors[idx], fontsize=9, bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'))
+            elif trend_choice == "2":
+                z = np.polyfit(x.dropna().index, y.dropna(), 2)
+                p = np.poly1d(z)
+                x_trend = np.linspace(x.min(), x.max(), 100)
+                current_ax.plot(x_trend, p(x_trend), "--", alpha=0.7, color=colors[idx], label=f"{y_col} (poly fit)")
+                
+        elif plot_type == "scatter":
+            current_ax.scatter(x, y, label=y_col, alpha=0.6, color=colors[idx])
+            
+            if trend_choice == "1":
+                valid_xy = pd.concat([x, y], axis=1).apply(pd.to_numeric, errors="coerce").dropna()
+                if len(valid_xy) > 1:
+                    xv = valid_xy.iloc[:, 0].values
+                    yv = valid_xy.iloc[:, 1].values
+                    slope, intercept = np.polyfit(xv, yv, 1)
+                    p = np.poly1d([slope, intercept])
+                    x_trend = np.linspace(xv.min(), xv.max(), 100)
+                    current_ax.plot(x_trend, p(x_trend), "--", alpha=0.7, color=colors[idx], label=f"{y_col} (linear fit)")
+                    txt = f"m={slope:.4g}, b={intercept:.4g}"
+                    y_offset = 0.95 - (idx * 0.05)
+                    current_ax.text(0.02, y_offset, txt, transform=current_ax.transAxes,
+                                    color=colors[idx], fontsize=9, bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'))
+            elif trend_choice == "2":
+                z = np.polyfit(x.dropna().index, y.dropna(), 2)
+                p = np.poly1d(z)
+                x_trend = np.linspace(x.min(), x.max(), 100)
+                current_ax.plot(x_trend, p(x_trend), "--", alpha=0.7, color=colors[idx], label=f"{y_col} (poly fit)")
+                
+        elif plot_type == "bar":
+            current_ax.bar(range(len(y)), y, label=y_col, alpha=0.7, color=colors[idx])
+            current_ax.set_xticks(range(len(y)))
+            
+        elif plot_type == "histogram":
+            current_ax.hist(y.dropna(), bins=20, label=y_col, alpha=0.6, color=colors[idx])
 
-    plt.xlabel(x_col)
-    plt.ylabel("Value")
-    plt.title("Lab data plot")
-    plt.grid(True)
-    plt.legend()
+    ax1.set_xlabel(x_col)
+    if not dual_axis:
+        ax1.set_ylabel(", ".join(y_cols))
+    else:
+        ax1.set_ylabel(y_cols[0], color=colors[0])
+        ax1.tick_params(axis='y', labelcolor=colors[0])
+        if ax2:
+            ax2.set_ylabel(", ".join(y_cols[1:]), color=colors[1])
+            ax2.tick_params(axis='y', labelcolor=colors[1])
+    
+    ax1.set_title("Lab data plot")
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(loc='upper left')
+    if ax2:
+        ax2.legend(loc='upper right')
+    
     plt.tight_layout()
+    
+    # Ask to save plot
+    save_choice = input("\nSave plot? (1=PNG, 2=PDF, 0=none): ").strip() or "0"
+    if save_choice in ["1", "2"]:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        ext = ".png" if save_choice == "1" else ".pdf"
+        filename = os.path.join(script_dir, f"plot_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}{ext}")
+        plt.savefig(filename, dpi=150, bbox_inches='tight')
+        print(f"Plot saved to: {filename}")
+    
     plt.show()
 
 
@@ -162,15 +507,23 @@ def main():
 
     # Folder where this script lives
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    print(f"\nScript directory (default folder): {script_dir}")
+    separated_dir = os.path.join(script_dir, "Seperated")
+    
+    # If Seperated folder exists and has CSV files, use it as default; otherwise use script directory
+    if os.path.isdir(separated_dir) and any(f.lower().endswith('.csv') for f in os.listdir(separated_dir)):
+        default_dir = separated_dir
+        print(f"\nDefault folder: {separated_dir} (preprocessed files)")
+    else:
+        default_dir = script_dir
+        print(f"\nDefault folder: {script_dir} (original files)")
 
     folder_path = input(
         "\nEnter folder path containing your CSV files\n"
-        "(leave empty to use the script folder above): "
+        f"(leave empty to use the default folder above): "
     ).strip()
 
     if folder_path == "":
-        folder_path = script_dir
+        folder_path = default_dir
 
     while True:
         try:
@@ -259,9 +612,19 @@ def main():
         print(f"{i}: {col}")
     print("=" * 50)
 
+    # Show summary statistics
+    numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+    if numeric_cols:
+        show_summary_stats(df, numeric_cols)
+    
     # Choose axes and plot
     x_col, y_cols = choose_axes(df)
-    plot_data(df, x_col, y_cols)
+    
+    # Filter data by points of interest
+    df_filtered = filter_data(df, x_col, y_cols)
+    
+    # Plot the data
+    plot_data(df_filtered, x_col, y_cols)
 
     print("\nDone.")
 
