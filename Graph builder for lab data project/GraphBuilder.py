@@ -1,19 +1,22 @@
-import pandas as pd
-import os
-import subprocess
-import sys
-import re
-import matplotlib.pyplot as plt
-import numpy as np
-from datetime import datetime
+import pandas as pd            # data manipulation, CSV loading, and table operations
+import os                     # filesystem path handling and directory operations
+import sys                    # access to Python executable/path and system args
+import re                     # regular expressions for parsing and detection
+import matplotlib.pyplot as plt  # plotting library for charts
+import numpy as np            # numerical routines, arrays, and polynomial fits
+from datetime import datetime # timestamp filenames and parse/format dates
 
-#! Run this in terminal to seperate variables in file:
+#! Run this in terminal to open folder path:
 
-#! fix_csv.py File_Name --group-by-header --replace-literal-tabs --inplace
+# cd "c:\Users\augus\Desktop\Python\Augustinas_Mockevicius\Graph builder for lab data project" 
 
-#! run this to to open the file containing the script and run it:
+#! To separate variable values by commas use:
 
-#! cd "c:\Users\augus\Desktop\Python\Augustinas_Mockevicius\Graph builder for lab data project" python GraphBuilder.py
+# python fix_csv.py Data.ex2.csv --group-by-header --replace-literal-tabs --inplace
+
+#! Run the graph builder script in terminal:
+
+# python GraphBuilder.py
 
 
 
@@ -76,6 +79,7 @@ def load_csv(filepath: str) -> pd.DataFrame:
     return df
 
 
+
 def choose_csv_file(folder_path: str) -> str:
     """
     Interactive file picker: list all .csv files in folder and let user select by number.
@@ -97,7 +101,7 @@ def choose_csv_file(folder_path: str) -> str:
         print(f"{i}: {fname}")
 
     while True:
-        choice = input("\nEnter the number of the CSV you want to use (or 'q', 'cancel', 'quit'): ").strip().lower()
+        choice = input("\nEnter the number of the CSV you want to use (To cancel: 'q', 'cancel', 'quit'): ").strip().lower()
 
         if choice in ["cancel", "q", "quit"]:
             print("\nProcess cancelled. Exiting...")
@@ -109,7 +113,7 @@ def choose_csv_file(folder_path: str) -> str:
                 chosen_file = csv_files[idx]
                 break
             else:
-                print(f"Please enter a number between 0 and {len(csv_files) - 1}.")
+                print(f"Enter a number between 0 and {len(csv_files) - 1}.")
         except ValueError:
             print("That is not a valid number. Try again.")
 
@@ -135,13 +139,13 @@ def choose_axes(df: pd.DataFrame):
                 x_col = df.columns[x_idx]
                 break
             else:
-                print(f"Please enter a number between 0 and {len(df.columns) - 1}.")
+                print(f"Enter a number between 0 and {len(df.columns) - 1}.")
         except ValueError:
             print("That is not a valid number. Try again.")
 
     # User selects Y axis column(s); comma-separated list for multiple columns
     while True:
-        y_choice = input("Enter column number(s) for Y axis data (comma separated): ").strip()
+        y_choice = input("Enter column number(s) for Y axis data: ").strip()
         try:
             indices = [int(x.strip()) for x in y_choice.split(",")]
             if not indices:
@@ -168,7 +172,7 @@ def choose_axes(df: pd.DataFrame):
             y_cols = [df.columns[i] for i in y_indices]
             break
         except ValueError:
-            print("Could not parse that. Use numbers separated by commas.")
+            print("Could not get that. Use numbers separated by commas.")
 
     return x_col, y_cols
 
@@ -269,7 +273,7 @@ def show_summary_stats(df: pd.DataFrame, numeric_cols: list):
 
         # Choose X axis
         while True:
-            x_choice = input("\nEnter the column number to use as X for slope calculation (or 'c' to cancel): ").strip()
+            x_choice = input("\nEnter the column number to use as X for slope calculation ('c' to cancel): ").strip()
             if x_choice.lower() in ["c", "cancel"]:
                 print("Slope computation cancelled.")
                 return
@@ -279,13 +283,13 @@ def show_summary_stats(df: pd.DataFrame, numeric_cols: list):
                     x_col = df.columns[x_idx]
                     break
                 else:
-                    print(f"Please enter a number between 0 and {len(df.columns) - 1}.")
+                    print(f"Enter a number between 0 and {len(df.columns) - 1}.")
             except ValueError:
-                print("That is not a valid number. Try again or enter 'c' to cancel.")
+                print("That is not a valid number. 'c' to cancel.")
 
         # Choose Y axes (one or multiple)
         while True:
-            y_choice = input("Enter column number(s) for Y (comma separated) or 'c' to cancel: ").strip()
+            y_choice = input("Enter column number(s) for Y. 'c' to cancel: ").strip()
             if y_choice.lower() in ["c", "cancel"]:
                 print("Slope computation cancelled.")
                 return
@@ -337,6 +341,40 @@ def show_summary_stats(df: pd.DataFrame, numeric_cols: list):
     return selected, stats_results
 
 
+def pick_row_range(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Selecting range to use for analysis/plotting.
+    """
+    total = len(df)
+    if total == 0:
+        print("\nNo rows available in the dataset.")
+        return df
+
+    print(f"\nRows available: 1 - {total}")
+    choice = input("Would you like to graph a part of rows? (Y/N): ").strip().upper()
+    if choice != "Y":
+        return df
+
+    while True:
+        start_str = input("Enter start row number: ").strip() # row start
+        end_str = input("Enter end row number: ").strip() # row end
+        try:
+            start = int(start_str)
+            end = int(end_str)
+        except ValueError:
+            print("Invalid input. Enter integer row numbers.") # if not integer
+            continue
+
+        if start < 1 or end < 1 or start > end or end > total: # checks if range is valid
+            print(f"Invalid range. Please enter values between 1 and {total}, and start <= end.")
+            continue
+
+        # Slice using iloc (end is inclusive for users, iloc end is exclusive)
+        sliced = df.iloc[start - 1:end].reset_index(drop=True) # reset_index to renumber rows
+        print(f"Selected rows: {start} to {end} ({len(sliced)} rows)")
+        return sliced
+
+
 def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
     """
     Filter data rows by a user-specified condition (e.g., column > value).
@@ -346,7 +384,7 @@ def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
     print("FILTER DATA (Points of Interest)")
     print("=" * 50)
     
-    filter_choice = input("\nDo you want to filter data by a condition? (Y/N): ").strip().upper()
+    filter_choice = input("\nDo you want to filter data by some condition? (Y/N): ").strip().upper()
     if filter_choice != "Y":
         return df
     
@@ -373,39 +411,57 @@ def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
     print("4: <= (less or equal)")
     print("5: == (equal to)")
     print("6: != (not equal to)")
+    print("7: Between (Value range)")
     
-    op_choice = input("\nEnter operator (1-6): ").strip()
-    op_map = {"1": ">", "2": "<", "3": ">=", "4": "<=", "5": "==", "6": "!="}
+    op_choice = input("\nEnter operator (1-7): ").strip()
+    op_map = {"1": ">", "2": "<", "3": ">=", "4": "<=", "5": "==", "6": "!=", "7": "between"}
     op = op_map.get(op_choice)
     if not op:
         print("Invalid operator.")
         return df
     
-    value_str = input(f"Enter value to compare {filter_col} {op} : ").strip()
-    try:
-        value = float(value_str)
-    except ValueError:
-        print("Invalid value.")
-        return df
-    
-    # Apply the chosen comparison operator to create a boolean mask (True = rows to keep)
+    # Prepare numeric column for comparison
     col_data = df[filter_col].apply(parse_numeric_string)
-    if op == ">":
-        mask = col_data > value
-    elif op == "<":
-        mask = col_data < value
-    elif op == ">=":
-        mask = col_data >= value
-    elif op == "<=":
-        mask = col_data <= value
-    elif op == "==":
-        mask = col_data == value
-    elif op == "!=":
-        mask = col_data != value
+
+    # Handle 'between' operator specially (two inputs)
+    if op == "between":
+        low_str = input(f"Enter lower bound (exclusive) for {filter_col}: ").strip() # lower bound
+        high_str = input(f"Enter upper bound (exclusive) for {filter_col}: ").strip() # upper bound
+        try:
+            low = float(low_str)
+            high = float(high_str)
+        except ValueError:
+            print("Invalid bound values.")
+            return df
+        mask = (col_data > low) & (col_data < high)
+    else:
+        value_str = input(f"Enter value to compare {filter_col} {op} : ").strip()
+        try:
+            value = float(value_str)
+        except ValueError:
+            print("Invalid value.")
+            return df
+        # Apply the chosen comparison operator to create a boolean mask (True = rows to keep)
+        if op == ">":
+            mask = col_data > value
+        elif op == "<":
+            mask = col_data < value
+        elif op == ">=":
+            mask = col_data >= value
+        elif op == "<=":
+            mask = col_data <= value
+        elif op == "==":
+            mask = col_data == value
+        elif op == "!=":
+            mask = col_data != value
     
     # Filter DataFrame using mask; reset_index renumbers rows starting at 0
     filtered_df = df[mask].reset_index(drop=True)
-    print(f"\nFiltered: {len(filtered_df)} of {len(df)} rows match {filter_col} {op} {value}")
+    # Print an informative message depending on operator used
+    if op == "between":
+        print(f"\nFiltered: {len(filtered_df)} of {len(df)} rows match {filter_col} between {low} and {high}")
+    else:
+        print(f"\nFiltered: {len(filtered_df)} of {len(df)} rows match {filter_col} {op} {value}")
     return filtered_df
 
 
@@ -419,24 +475,45 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
 
     # User chooses plot visualization type
     print("\nPlot type options:")
-    print("1: Line plot (default)")
+    print("1: Line plot")
     print("2: Scatter plot")
     print("3: Bar chart")
     print("4: Histogram")
     
-    plot_choice = input("\nEnter plot type (1-4, default 1): ").strip() or "1"
+    plot_choice = input("\nEnter plot type (1-4): ").strip() or "1"
     plot_type = {"1": "line", "2": "scatter", "3": "bar", "4": "histogram"}.get(plot_choice, "line")
     
     # Ask about trend line (for line/scatter only)
     trend_choice = None
     if plot_type in ["line", "scatter"]:
-        trend_choice = input("Add trend line? (1=Linear, 2=Polynomial, 0=No): ").strip() or "0"
+        trend_choice = input("Add trend line? (1=No, 2=Linear, 3=Polynomial): ").strip() or "0"
     
     # Ask about dual Y-axis (for line plots with multiple series)
     dual_axis = False
+    y_axis_ranges = {}  # store min/max for each Y column
     if len(y_cols) > 1 and plot_type == "line":
         dual_choice = input("Use dual Y-axis for different scales? (Y/N): ").strip().upper()
         dual_axis = (dual_choice == "Y")
+        
+        # If dual axis enabled, allow user to set custom ranges for each axis
+        if dual_axis:
+            print("\nSet Y-axis ranges (leave blank to auto-fit):")
+            for idx, y_col in enumerate(y_cols):
+                print(f"\nAxis {idx + 1}: {y_col}")
+                y_min_str = input(f"  Min value (blank for auto): ").strip()
+                y_max_str = input(f"  Max value (blank for auto): ").strip()
+                
+                y_min = None
+                y_max = None
+                try:
+                    if y_min_str:
+                        y_min = float(y_min_str)
+                    if y_max_str:
+                        y_max = float(y_max_str)
+                except ValueError:
+                    print(f"  Warning: Invalid range values, using auto-fit")
+                
+                y_axis_ranges[y_col] = (y_min, y_max)
     
     # Ask about legend customization
     print("\nLegend options:")
@@ -444,7 +521,7 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     print("2: Custom position")
     print("3: Custom labels")
     print("4: Hide legend")
-    legend_choice = input("Enter choice (1-4, default 1): ").strip() or "1"
+    legend_choice = input("Enter choice (1-4): ").strip() or "1"
     
     # Ask for custom chart title
     custom_title = input("\nEnter custom chart title (or leave blank for default): ").strip()
@@ -476,7 +553,7 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
         print("\nLegend position options:")
         for k, v in positions.items():
             print(f"{k}: {v}")
-        pos_choice = input("Enter position (0-9, default 0): ").strip() or "0"
+        pos_choice = input("Enter position (0-9): ").strip() or "0"
         legend_pos = positions.get(pos_choice, "upper left")
     
     # Convert X column to numeric using smart parsing; drop NaN values
@@ -591,6 +668,17 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
         if ax2:
             ax2.set_ylabel(", ".join(y_cols[1:]), fontsize=12, fontweight='bold', color=colors[1])
             ax2.tick_params(axis='y', labelcolor=colors[1], labelsize=10)
+        
+        # Apply custom Y-axis ranges if specified
+        if y_cols[0] in y_axis_ranges:
+            y_min, y_max = y_axis_ranges[y_cols[0]]
+            if y_min is not None or y_max is not None:
+                ax1.set_ylim(y_min, y_max)
+        
+        if ax2 and len(y_cols) > 1 and y_cols[1] in y_axis_ranges:
+            y_min, y_max = y_axis_ranges[y_cols[1]]
+            if y_min is not None or y_max is not None:
+                ax2.set_ylim(y_min, y_max)
     
     # Improve title and styling
     ax1.set_title(custom_title, fontsize=14, fontweight='bold', pad=20)
@@ -610,10 +698,10 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     plt.tight_layout()  # Auto-adjust spacing to avoid label cutoff
     
     # User chooses whether to save plot to disk
-    save_choice = input("\nSave plot? (1=PNG, 2=PDF, 0=none): ").strip() or "0"
-    if save_choice in ["1", "2"]:
+    save_choice = input("\nSave plot? (1=none, 2=PNG, 3=PDF): ").strip() or "1"
+    if save_choice in ["2", "3"]:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        ext = ".png" if save_choice == "1" else ".pdf"
+        ext = ".png" if save_choice == "2" else ".pdf"
         # Filename includes timestamp (YYYYMMDD_HHMMSS) to avoid overwriting
         filename = os.path.join(script_dir, f"plot_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}{ext}")
         plt.savefig(filename, dpi=300, bbox_inches='tight', facecolor='white')  # Higher DPI for quality
@@ -655,63 +743,27 @@ def main():
             print(f"\nError selecting file: {e}")
             return
 
-        # Attempt to load the CSV. If loading fails or the file looks malformed
-        # (contains literal "\\t" sequences or parses into a single column
-        # with embedded whitespace), run the `fix_csv.py` helper to preprocess it
-        # into a clean, comma-separated file and load that instead.
-        need_fix = False
+        # Try to load the CSV; if it fails, check heuristics and offer to run fix_csv.py
+        loaded = False
         try:
             df = load_csv(filepath)
-        except Exception:
-            need_fix = True
+            loaded = True
+        except Exception as e:
+            print(f"\nInitial load failed: {e}")
 
-        # Inspect raw file for explicit '\\t' sequences or suspicious single-column parse
-        try:
-            with open(filepath, 'r', encoding='utf-8', errors='replace') as fh:
-                raw_text = fh.read()
-            if "\\t" in raw_text:
-                need_fix = True
-        except Exception:
-            # If reading fails, prefer to attempt fix
-            need_fix = True
+        if not loaded:
+            print("\nCould not load the selected CSV file. It may be corrupted or use non-standard separators.")
+            print("If your file requires preprocessing (e.g. separating columns), run your fixer tool manually and try again.")
 
-        if not need_fix:
-            # If df has only one column but entries contain whitespace, it's likely mis-parsed
-            if df is not None and df.shape[1] == 1:
-                sample = df.iloc[0, 0]
-                if isinstance(sample, str) and re.search(r"\s+", sample):
-                    need_fix = True
-
-        if need_fix:
-            print("\nFile appears malformed — running preprocessor (fix_csv.py) to clean it up...")
-            fix_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fix_csv.py")
-            if not os.path.isfile(fix_script):
-                print(f"Preprocessor not found: {fix_script}")
+        if not loaded:
+            retry = input("Choose a different file? (Y to choose again, any other key to exit): ").strip().upper()
+            if retry == "Y":
+                print("Let's choose a different file.\n")
+                continue
+            else:
                 return
 
-            # Run fix_csv.py to create a separated file in Seperated/ by default
-            cmd = [sys.executable, fix_script, filepath, "--replace-literal-tabs", "--group-by-header"]
-            try:
-                subprocess.run(cmd, check=True)
-            except subprocess.CalledProcessError as e:
-                print(f"Preprocessing failed: {e}")
-                return
-
-            # Load from the Seperated output file
-            separated_dir = os.path.join(os.path.dirname(filepath), "Seperated")
-            base = os.path.splitext(os.path.basename(filepath))[0]
-            new_path = os.path.join(separated_dir, base + "_comma" + os.path.splitext(filepath)[1])
-            if not os.path.isfile(new_path):
-                print(f"Expected preprocessed file not found: {new_path}")
-                return
-
-            try:
-                df = load_csv(new_path)
-                filepath = new_path
-            except Exception as e:
-                print(f"Could not load preprocessed file: {e}")
-                return
-
+        # If we reach here, df is loaded
         print(f"\nFile selected: {filepath}")
         print("\nFirst few rows of this file:")
         print(df.head())
@@ -742,10 +794,13 @@ def main():
     
     # Choose axes and plot
     x_col, y_cols = choose_axes(df)
-    
+
+    # Optionally select a contiguous row range to analyze
+    df = pick_row_range(df)
+
     # Filter data by points of interest
     df_filtered = filter_data(df, x_col, y_cols)
-    
+
     # Plot the data
     plot_data(df_filtered, x_col, y_cols)
 

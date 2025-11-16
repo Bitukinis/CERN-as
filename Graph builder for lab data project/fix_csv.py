@@ -4,7 +4,7 @@ fix_csv.py
 
 
 
-#! To run file in terminal:
+#! To run file in terminal write:
 
 #! fix_csv.py Data.ex2.csv --group-by-header --replace-literal-tabs --inplace
 #! fix_csv.py File_Name --group-by-header --replace-literal-tabs --inplace
@@ -78,7 +78,7 @@ def convert_regex(raw: str) -> str:
     # First, collapse any combination of spaces/tabs into a single comma
     # But keep quoted fields intact is hard with simple regex; this is a best-effort
     # Replace runs of whitespace with a single comma
-    out = re.sub(r"\s+", ",", raw)
+    out = re.sub(r"\s+", ", ", raw)
     return out
 
 
@@ -166,7 +166,7 @@ def main():
             header_line = lines[0]
             # detect header separator
             if "," in header_line:
-                header_tokens = [t.strip() for t in header_line.split(",") if t.strip()]
+                header_tokens = [t.strip() for t in header_line.split(", ") if t.strip()]
             else:
                 header_tokens = re.split(r"\s+", header_line.strip())
             group_size = len(header_tokens)
@@ -188,7 +188,7 @@ def main():
         if header_tokens is None:
             header_tokens = [f"col{i+1}" for i in range(group_size)]
 
-        csv_lines = [",".join(header_tokens)] + [",".join(row) for row in rows]
+        csv_lines = [", ".join(header_tokens)] + [", ".join(row) for row in rows]
         out_text = "\n".join(csv_lines) + "\n"
         out.write_text(out_text, encoding="utf-8")
         print(f"Written grouped CSV to: {out}")
@@ -231,9 +231,9 @@ def main():
 
     if args.inplace:
         if not args.force:
-            ans = input(f"Overwrite original file {inp} with {out}? (y/N): ").strip().lower()
+            ans = input(f"Overwrite original file {inp} with {out}? (Y/N): ").strip().lower()
             if ans not in ('y', 'yes'):
-                print("Aborted inplace replace")
+                print("Mission aborted")
                 return
         # Overwrite original
         shutil.copy2(out, inp)
