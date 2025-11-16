@@ -5,6 +5,7 @@ import sys
 import re
 import matplotlib.pyplot as plt
 import numpy as np
+from datetime import datetime
 
 #! Run this in terminal to seperate variables in file:
 
@@ -14,6 +15,46 @@ import numpy as np
 
 #! cd "c:\Users\augus\Desktop\Python\Augustinas_Mockevicius\Graph builder for lab data project" python GraphBuilder.py
 
+
+
+def parse_numeric_string(value):
+    """
+    Parse numeric strings with various formats into float.
+    Supports: percentages ('95%'), thousands separators ('1,000.5'), scientific notation ('1e-5'), currency.
+    Returns float if parseable, otherwise returns None.
+    """
+    if pd.isna(value):
+        return None
+    
+    if isinstance(value, (int, float)):
+        return float(value)
+    
+    if not isinstance(value, str):
+        return None
+    
+    value = value.strip()
+    
+    if not value:
+        return None
+    
+    # Handle percentage (e.g., "95%", "95.5%")
+    if value.endswith('%'):
+        try:
+            return float(value[:-1].strip()) / 100
+        except ValueError:
+            return None
+    
+    # Remove currency symbols ($, €, £, ¥, etc.)
+    value = re.sub(r'[\$€£¥₹]', '', value)
+    
+    # Remove thousands separators (commas), but keep decimal point
+    value = value.replace(',', '')
+    
+    # Try to parse as float (handles regular numbers and scientific notation like 1e-5)
+    try:
+        return float(value)
+    except ValueError:
+        return None
 
 
 def load_csv(filepath: str) -> pd.DataFrame:
@@ -192,8 +233,8 @@ def show_summary_stats(df: pd.DataFrame, numeric_cols: list):
     stats_results = {}
     for col in numeric_cols:
         try:
-            # Convert to numeric and drop NaN/non-numeric values
-            data = pd.to_numeric(df[col], errors="coerce").dropna()
+            # Convert to numeric using smart parsing (handles percentages, currency, etc.)
+            data = df[col].apply(parse_numeric_string).dropna()
             if len(data) == 0:
                 print(f"\n{col}: (no numeric data)")
                 continue
@@ -269,7 +310,9 @@ def show_summary_stats(df: pd.DataFrame, numeric_cols: list):
         for ycol in y_cols:
             try:
                 # Align X and Y: drop rows where either column has NaN or non-numeric value
-                valid = df[[x_col, ycol]].apply(pd.to_numeric, errors="coerce").dropna()
+                x_vals = df[x_col].apply(parse_numeric_string)
+                y_vals = df[ycol].apply(parse_numeric_string)
+                valid = pd.concat([x_vals, y_vals], axis=1).dropna()
                 if valid.empty:
                     print(f"\n{ycol}: (no numeric data after alignment with X)")
                     continue
@@ -346,7 +389,7 @@ def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
         return df
     
     # Apply the chosen comparison operator to create a boolean mask (True = rows to keep)
-    col_data = pd.to_numeric(df[filter_col], errors="coerce")
+    col_data = df[filter_col].apply(parse_numeric_string)
     if op == ">":
         mask = col_data > value
     elif op == "<":
@@ -395,9 +438,50 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
         dual_choice = input("Use dual Y-axis for different scales? (Y/N): ").strip().upper()
         dual_axis = (dual_choice == "Y")
     
-    # Convert X column to numeric; drop NaN values
+    # Ask about legend customization
+    print("\nLegend options:")
+    print("1: Default (upper left)")
+    print("2: Custom position")
+    print("3: Custom labels")
+    print("4: Hide legend")
+    legend_choice = input("Enter choice (1-4, default 1): ").strip() or "1"
+    
+    # Ask for custom chart title
+    custom_title = input("\nEnter custom chart title (or leave blank for default): ").strip()
+    if not custom_title:
+        custom_title = "Laboratory Data Analysis"
+    
+    # Handle custom legend labels
+    custom_labels = {}
+    if legend_choice == "3":
+        print("\nEnter custom labels for each Y column (leave blank to keep original):")
+        for y_col in y_cols:
+            label = input(f"Label for '{y_col}': ").strip()
+            if label:
+                custom_labels[y_col] = label
+            else:
+                custom_labels[y_col] = y_col
+    else:
+        custom_labels = {y_col: y_col for y_col in y_cols}
+    
+    # Determine legend position (for later use)
+    legend_pos = "upper left"  # default
+    if legend_choice == "2":  # Custom position
+        positions = {
+            "1": "upper left", "2": "upper center", "3": "upper right",
+            "4": "center left", "5": "center", "6": "center right",
+            "7": "lower left", "8": "lower center", "9": "lower right",
+            "0": "upper left"
+        }
+        print("\nLegend position options:")
+        for k, v in positions.items():
+            print(f"{k}: {v}")
+        pos_choice = input("Enter position (0-9, default 0): ").strip() or "0"
+        legend_pos = positions.get(pos_choice, "upper left")
+    
+    # Convert X column to numeric using smart parsing; drop NaN values
     try:
-        x = pd.to_numeric(df[x_col], errors="coerce")
+        x = df[x_col].apply(parse_numeric_string)
     except Exception as e:
         raise ValueError(f"Could not convert X column to numeric: {e}")
 
@@ -411,8 +495,8 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     # Plot each Y column
     for idx, y_col in enumerate(y_cols):
         try:
-            # Convert Y to numeric; drop NaN values
-            y = pd.to_numeric(df[y_col], errors="coerce")
+            # Convert Y to numeric using smart parsing; drop NaN values
+            y = df[y_col].apply(parse_numeric_string)
         except Exception as e:
             print(f"Skipping column {y_col}: could not convert to numeric. Error: {e}")
             continue
@@ -428,7 +512,7 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
         if plot_type == "line":
             # Line plot with markers for clarity; larger linewidth and markersize
             current_ax.plot(x, y, marker="o", markersize=6, linestyle="-", linewidth=2.5, 
-                           label=y_col, color=colors[idx])
+                           label=custom_labels[y_col], color=colors[idx])
             
             # Add trend line if requested
             if trend_choice == "1":
@@ -461,7 +545,7 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
                 
         elif plot_type == "scatter":
             # Scatter plot with transparency (alpha) to show overlapping points; larger markers with edge
-            current_ax.scatter(x, y, s=80, label=y_col, alpha=0.7, color=colors[idx], edgecolors='black', linewidth=0.5)
+            current_ax.scatter(x, y, s=80, label=custom_labels[y_col], alpha=0.7, color=colors[idx], edgecolors='black', linewidth=0.5)
             
             if trend_choice == "1":
                 # Align and fit linear trend for scatter plot
@@ -488,12 +572,12 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
                 
         elif plot_type == "bar":
             # Bar chart: one bar per data point with edge colors for definition
-            current_ax.bar(range(len(y)), y, label=y_col, alpha=0.75, color=colors[idx], edgecolor='black', linewidth=1.2)
+            current_ax.bar(range(len(y)), y, label=custom_labels[y_col], alpha=0.75, color=colors[idx], edgecolor='black', linewidth=1.2)
             current_ax.set_xticks(range(len(y)))
             
         elif plot_type == "histogram":
             # Histogram: distribution of Y values (bins=20 intervals) with edge color
-            current_ax.hist(y.dropna(), bins=20, label=y_col, alpha=0.7, color=colors[idx], edgecolor='black', linewidth=1)
+            current_ax.hist(y.dropna(), bins=20, label=custom_labels[y_col], alpha=0.7, color=colors[idx], edgecolor='black', linewidth=1)
 
     # Set axis labels and title with larger, bold fonts
     ax1.set_xlabel(x_col, fontsize=12, fontweight='bold')
@@ -509,14 +593,15 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
             ax2.tick_params(axis='y', labelcolor=colors[1], labelsize=10)
     
     # Improve title and styling
-    ax1.set_title("Laboratory Data Analysis", fontsize=14, fontweight='bold', pad=20)
+    ax1.set_title(custom_title, fontsize=14, fontweight='bold', pad=20)
     ax1.grid(True, alpha=0.4, linestyle='--', linewidth=0.7)  # Enhanced grid: dashed lines, better visibility
     ax1.tick_params(axis='x', labelsize=10)
     
     # Enhanced legend with better positioning and frame
-    legend1 = ax1.legend(loc='upper left', fontsize=10, framealpha=0.95, edgecolor='black', fancybox=True, shadow=True)
-    if ax2:
-        ax2.legend(loc='upper right', fontsize=10, framealpha=0.95, edgecolor='black', fancybox=True, shadow=True)
+    if legend_choice != "4":  # "4" means hide legend
+        legend1 = ax1.legend(loc=legend_pos, fontsize=10, framealpha=0.95, edgecolor='black', fancybox=True, shadow=True)
+        if ax2:
+            ax2.legend(loc='upper right', fontsize=10, framealpha=0.95, edgecolor='black', fancybox=True, shadow=True)
     
     # Add light background color for readability
     ax1.set_facecolor('#f8f9fa')
