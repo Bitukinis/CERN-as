@@ -19,6 +19,7 @@ import numpy as np
 def load_csv(filepath: str) -> pd.DataFrame:
     """
     Load a CSV file into a pandas DataFrame.
+    Raises FileNotFoundError if file doesn't exist, or ValueError if read/parse fails or file is empty.
     """
     if not os.path.isfile(filepath):
         raise FileNotFoundError(f"File not found: {filepath}")
@@ -36,16 +37,15 @@ def load_csv(filepath: str) -> pd.DataFrame:
 
 def choose_csv_file(folder_path: str) -> str:
     """
-    Let the user choose a CSV file from a given folder.
-    Returns the full path to the chosen CSV file.
-    User can enter "cancel" or "q" to exit the process.
+    Interactive file picker: list all .csv files in folder and let user select by number.
+    Returns full path to chosen file. User can enter 'cancel' or 'q' to exit.
     """
     if not os.path.isdir(folder_path):
         raise NotADirectoryError(f"Not a valid folder: {folder_path}")
 
     print(f"\nLooking for CSV files in: {folder_path}")
 
-    # Gathers all .csv files in folder
+    # List all .csv files in the folder
     csv_files = [f for f in os.listdir(folder_path) if f.lower().endswith(".csv")]
 
     if not csv_files:
@@ -78,14 +78,14 @@ def choose_csv_file(folder_path: str) -> str:
 
 def choose_axes(df: pd.DataFrame):
     """
-    Let the user choose which column is X and which column(s) are Y.
-    Returns (x_column_name, [list_of_y_column_names]).
+    Prompt user to select X column (single) and Y column(s) (comma-separated, multiple allowed).
+    Returns tuple: (x_col_name, [y_col_names]).
     """
     print("\nColumns detected:")
     for i, col in enumerate(df.columns):
         print(f"{i}: {col}")
 
-    # Choose X axis
+    # User selects X axis column (single column only)
     while True:
         x_choice = input("\nEnter the column number for the X axis: ").strip()
         try:
@@ -98,7 +98,7 @@ def choose_axes(df: pd.DataFrame):
         except ValueError:
             print("That is not a valid number. Try again.")
 
-    # Choose Y axes (can be multiple, comma separated)
+    # User selects Y axis column(s); comma-separated list for multiple columns
     while True:
         y_choice = input("Enter column number(s) for Y axis data (comma separated): ").strip()
         try:
@@ -188,10 +188,11 @@ def show_summary_stats(df: pd.DataFrame, numeric_cols: list):
         print("No valid statistics selected.")
         return
 
-    # Compute and store chosen statistics for numeric columns
+    # Calculate requested statistics (min/max/mean/median/std) for each numeric column
     stats_results = {}
     for col in numeric_cols:
         try:
+            # Convert to numeric and drop NaN/non-numeric values
             data = pd.to_numeric(df[col], errors="coerce").dropna()
             if len(data) == 0:
                 print(f"\n{col}: (no numeric data)")
@@ -264,22 +265,23 @@ def show_summary_stats(df: pd.DataFrame, numeric_cols: list):
             except ValueError:
                 print("Could not parse that. Use numbers separated by commas.")
 
-        # Compute slopes for each selected Y
+        # Compute linear slope (m) and intercept (b) for fitted line y = m*x + b, plus R² quality
         for ycol in y_cols:
             try:
+                # Align X and Y: drop rows where either column has NaN or non-numeric value
                 valid = df[[x_col, ycol]].apply(pd.to_numeric, errors="coerce").dropna()
                 if valid.empty:
                     print(f"\n{ycol}: (no numeric data after alignment with X)")
                     continue
                 x = valid[x_col].values
                 y = valid[ycol].values
-                # Fit line
+                # Fit linear polynomial: np.polyfit returns [slope, intercept] for degree=1
                 slope, intercept = np.polyfit(x, y, 1)
-                # Compute R^2
-                y_pred = slope * x + intercept
-                ss_res = ((y - y_pred) ** 2).sum()
-                ss_tot = ((y - y.mean()) ** 2).sum()
-                r2 = 1.0 - ss_res / ss_tot if ss_tot != 0 else float('nan')
+                # Compute R² (coefficient of determination): 0=poor fit, 1=perfect fit
+                y_pred = slope * x + intercept  # Predicted y values from fitted line
+                ss_res = ((y - y_pred) ** 2).sum()  # Sum of squared residuals (prediction errors)
+                ss_tot = ((y - y.mean()) ** 2).sum()  # Total sum of squares (data variance)
+                r2 = 1.0 - ss_res / ss_tot if ss_tot != 0 else float('nan')  # R² = 1 - (residual/total)
                 print(f"\n{ycol} vs {x_col}:")
                 print(f"  Slope:     {slope:.6g}")
                 print(f"  Intercept: {intercept:.6g}")
@@ -294,8 +296,8 @@ def show_summary_stats(df: pd.DataFrame, numeric_cols: list):
 
 def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
     """
-    Allow user to filter data by condition(s) to select points of interest.
-    Returns the filtered DataFrame.
+    Filter data rows by a user-specified condition (e.g., column > value).
+    Returns filtered DataFrame; if no filter chosen, returns full DataFrame unchanged.
     """
     print("\n" + "=" * 50)
     print("FILTER DATA (Points of Interest)")
@@ -343,7 +345,7 @@ def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
         print("Invalid value.")
         return df
     
-    # Apply filter
+    # Apply the chosen comparison operator to create a boolean mask (True = rows to keep)
     col_data = pd.to_numeric(df[filter_col], errors="coerce")
     if op == ">":
         mask = col_data > value
@@ -358,6 +360,7 @@ def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
     elif op == "!=":
         mask = col_data != value
     
+    # Filter DataFrame using mask; reset_index renumbers rows starting at 0
     filtered_df = df[mask].reset_index(drop=True)
     print(f"\nFiltered: {len(filtered_df)} of {len(df)} rows match {filter_col} {op} {value}")
     return filtered_df
@@ -365,12 +368,13 @@ def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
 
 def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     """
-    Plot selected X and Y columns with multiple plot types and enhancements.
+    Plot selected X and Y columns with multiple plot types (line/scatter/bar/histogram).
+    Supports trend lines (linear/polynomial), dual Y-axis, and plot saving (PNG/PDF).
     """
     print(f"\nPlotting X: {x_col}")
     print(f"Plotting Y columns: {', '.join(y_cols)}")
 
-    # Choose plot type
+    # User chooses plot visualization type
     print("\nPlot type options:")
     print("1: Line plot (default)")
     print("2: Scatter plot")
@@ -380,73 +384,87 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     plot_choice = input("\nEnter plot type (1-4, default 1): ").strip() or "1"
     plot_type = {"1": "line", "2": "scatter", "3": "bar", "4": "histogram"}.get(plot_choice, "line")
     
-    # Ask about trend line
+    # Ask about trend line (for line/scatter only)
     trend_choice = None
     if plot_type in ["line", "scatter"]:
         trend_choice = input("Add trend line? (1=Linear, 2=Polynomial, 0=No): ").strip() or "0"
     
-    # Ask about dual axis
+    # Ask about dual Y-axis (for line plots with multiple series)
     dual_axis = False
     if len(y_cols) > 1 and plot_type == "line":
         dual_choice = input("Use dual Y-axis for different scales? (Y/N): ").strip().upper()
         dual_axis = (dual_choice == "Y")
     
-    # Extract X as numeric
+    # Convert X column to numeric; drop NaN values
     try:
         x = pd.to_numeric(df[x_col], errors="coerce")
     except Exception as e:
         raise ValueError(f"Could not convert X column to numeric: {e}")
 
+    # Create figure with main axis
     fig, ax1 = plt.subplots(figsize=(10, 6))
     ax2 = None
     
+    # Color palette for each Y series
     colors = plt.cm.tab10(np.linspace(0, 1, len(y_cols)))
 
+    # Plot each Y column
     for idx, y_col in enumerate(y_cols):
         try:
+            # Convert Y to numeric; drop NaN values
             y = pd.to_numeric(df[y_col], errors="coerce")
         except Exception as e:
             print(f"Skipping column {y_col}: could not convert to numeric. Error: {e}")
             continue
         
-        # Choose axis
+        # Select axis: use ax2 (twin axis) for 2nd+ series if dual_axis is enabled
         current_ax = ax1
         if dual_axis and idx > 0:
             if ax2 is None:
-                ax2 = ax1.twinx()
+                ax2 = ax1.twinx()  # Create second Y-axis sharing same X-axis
             current_ax = ax2
 
         # Plot based on type
         if plot_type == "line":
-            current_ax.plot(x, y, marker="o", linestyle="-", label=y_col, color=colors[idx])
+            # Line plot with markers for clarity; larger linewidth and markersize
+            current_ax.plot(x, y, marker="o", markersize=6, linestyle="-", linewidth=2.5, 
+                           label=y_col, color=colors[idx])
             
             # Add trend line if requested
             if trend_choice == "1":
-                # Align numeric x and y values
+                # Align numeric x and y values by removing rows where either is NaN
                 valid_xy = pd.concat([x, y], axis=1).apply(pd.to_numeric, errors="coerce").dropna()
                 if len(valid_xy) > 1:
                     xv = valid_xy.iloc[:, 0].values
                     yv = valid_xy.iloc[:, 1].values
+                    # Fit linear trend: computes slope and intercept
                     slope, intercept = np.polyfit(xv, yv, 1)
                     p = np.poly1d([slope, intercept])
+                    # Generate smooth line from data min to max
                     x_trend = np.linspace(xv.min(), xv.max(), 100)
-                    current_ax.plot(x_trend, p(x_trend), "--", alpha=0.7, color=colors[idx], label=f"{y_col} (linear fit)")
-                    # Annotate slope/intercept on plot (axes coords)
-                    txt = f"m={slope:.4g}, b={intercept:.4g}"
-                    # compute a vertical offset per series to avoid overlaps
-                    y_offset = 0.95 - (idx * 0.05)
+                    current_ax.plot(x_trend, p(x_trend), "--", linewidth=2, alpha=0.8, 
+                                   color=colors[idx], label=f"{y_col} trend")
+                    # Annotate slope/intercept on plot using axis coordinates (0-1 range)
+                    txt = f"Slope: {slope:.3g}\nIntercept: {intercept:.3g}"
+                    # Vertical offset prevents label overlap between multiple series
+                    y_offset = 0.95 - (idx * 0.08)
                     current_ax.text(0.02, y_offset, txt, transform=current_ax.transAxes,
-                                    color=colors[idx], fontsize=9, bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'))
+                                    color=colors[idx], fontsize=10, fontweight='bold',
+                                    bbox=dict(facecolor='white', alpha=0.75, edgecolor=colors[idx], linewidth=1.5))
             elif trend_choice == "2":
+                # Fit polynomial (degree 2) trend line
                 z = np.polyfit(x.dropna().index, y.dropna(), 2)
                 p = np.poly1d(z)
                 x_trend = np.linspace(x.min(), x.max(), 100)
-                current_ax.plot(x_trend, p(x_trend), "--", alpha=0.7, color=colors[idx], label=f"{y_col} (poly fit)")
+                current_ax.plot(x_trend, p(x_trend), "--", linewidth=2, alpha=0.8, 
+                               color=colors[idx], label=f"{y_col} poly fit")
                 
         elif plot_type == "scatter":
-            current_ax.scatter(x, y, label=y_col, alpha=0.6, color=colors[idx])
+            # Scatter plot with transparency (alpha) to show overlapping points; larger markers with edge
+            current_ax.scatter(x, y, s=80, label=y_col, alpha=0.7, color=colors[idx], edgecolors='black', linewidth=0.5)
             
             if trend_choice == "1":
+                # Align and fit linear trend for scatter plot
                 valid_xy = pd.concat([x, y], axis=1).apply(pd.to_numeric, errors="coerce").dropna()
                 if len(valid_xy) > 1:
                     xv = valid_xy.iloc[:, 0].values
@@ -454,55 +472,75 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
                     slope, intercept = np.polyfit(xv, yv, 1)
                     p = np.poly1d([slope, intercept])
                     x_trend = np.linspace(xv.min(), xv.max(), 100)
-                    current_ax.plot(x_trend, p(x_trend), "--", alpha=0.7, color=colors[idx], label=f"{y_col} (linear fit)")
-                    txt = f"m={slope:.4g}, b={intercept:.4g}"
-                    y_offset = 0.95 - (idx * 0.05)
+                    current_ax.plot(x_trend, p(x_trend), "--", linewidth=2, alpha=0.8, 
+                                   color=colors[idx], label=f"{y_col} trend")
+                    txt = f"Slope: {slope:.3g}\nIntercept: {intercept:.3g}"
+                    y_offset = 0.95 - (idx * 0.08)
                     current_ax.text(0.02, y_offset, txt, transform=current_ax.transAxes,
-                                    color=colors[idx], fontsize=9, bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'))
+                                    color=colors[idx], fontsize=10, fontweight='bold',
+                                    bbox=dict(facecolor='white', alpha=0.75, edgecolor=colors[idx], linewidth=1.5))
             elif trend_choice == "2":
                 z = np.polyfit(x.dropna().index, y.dropna(), 2)
                 p = np.poly1d(z)
                 x_trend = np.linspace(x.min(), x.max(), 100)
-                current_ax.plot(x_trend, p(x_trend), "--", alpha=0.7, color=colors[idx], label=f"{y_col} (poly fit)")
+                current_ax.plot(x_trend, p(x_trend), "--", linewidth=2, alpha=0.8, 
+                               color=colors[idx], label=f"{y_col} poly fit")
                 
         elif plot_type == "bar":
-            current_ax.bar(range(len(y)), y, label=y_col, alpha=0.7, color=colors[idx])
+            # Bar chart: one bar per data point with edge colors for definition
+            current_ax.bar(range(len(y)), y, label=y_col, alpha=0.75, color=colors[idx], edgecolor='black', linewidth=1.2)
             current_ax.set_xticks(range(len(y)))
             
         elif plot_type == "histogram":
-            current_ax.hist(y.dropna(), bins=20, label=y_col, alpha=0.6, color=colors[idx])
+            # Histogram: distribution of Y values (bins=20 intervals) with edge color
+            current_ax.hist(y.dropna(), bins=20, label=y_col, alpha=0.7, color=colors[idx], edgecolor='black', linewidth=1)
 
-    ax1.set_xlabel(x_col)
+    # Set axis labels and title with larger, bold fonts
+    ax1.set_xlabel(x_col, fontsize=12, fontweight='bold')
     if not dual_axis:
-        ax1.set_ylabel(", ".join(y_cols))
+        # Single Y-axis: label lists all Y columns
+        ax1.set_ylabel(", ".join(y_cols), fontsize=12, fontweight='bold')
     else:
-        ax1.set_ylabel(y_cols[0], color=colors[0])
-        ax1.tick_params(axis='y', labelcolor=colors[0])
+        # Dual Y-axis: first series uses ax1 (left), others use ax2 (right)
+        ax1.set_ylabel(y_cols[0], fontsize=12, fontweight='bold', color=colors[0])
+        ax1.tick_params(axis='y', labelcolor=colors[0], labelsize=10)
         if ax2:
-            ax2.set_ylabel(", ".join(y_cols[1:]), color=colors[1])
-            ax2.tick_params(axis='y', labelcolor=colors[1])
+            ax2.set_ylabel(", ".join(y_cols[1:]), fontsize=12, fontweight='bold', color=colors[1])
+            ax2.tick_params(axis='y', labelcolor=colors[1], labelsize=10)
     
-    ax1.set_title("Lab data plot")
-    ax1.grid(True, alpha=0.3)
-    ax1.legend(loc='upper left')
+    # Improve title and styling
+    ax1.set_title("Laboratory Data Analysis", fontsize=14, fontweight='bold', pad=20)
+    ax1.grid(True, alpha=0.4, linestyle='--', linewidth=0.7)  # Enhanced grid: dashed lines, better visibility
+    ax1.tick_params(axis='x', labelsize=10)
+    
+    # Enhanced legend with better positioning and frame
+    legend1 = ax1.legend(loc='upper left', fontsize=10, framealpha=0.95, edgecolor='black', fancybox=True, shadow=True)
     if ax2:
-        ax2.legend(loc='upper right')
+        ax2.legend(loc='upper right', fontsize=10, framealpha=0.95, edgecolor='black', fancybox=True, shadow=True)
     
-    plt.tight_layout()
+    # Add light background color for readability
+    ax1.set_facecolor('#f8f9fa')
+    fig.patch.set_facecolor('white')
     
-    # Ask to save plot
+    plt.tight_layout()  # Auto-adjust spacing to avoid label cutoff
+    
+    # User chooses whether to save plot to disk
     save_choice = input("\nSave plot? (1=PNG, 2=PDF, 0=none): ").strip() or "0"
     if save_choice in ["1", "2"]:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         ext = ".png" if save_choice == "1" else ".pdf"
+        # Filename includes timestamp (YYYYMMDD_HHMMSS) to avoid overwriting
         filename = os.path.join(script_dir, f"plot_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}{ext}")
-        plt.savefig(filename, dpi=150, bbox_inches='tight')
+        plt.savefig(filename, dpi=300, bbox_inches='tight', facecolor='white')  # Higher DPI for quality
         print(f"Plot saved to: {filename}")
     
-    plt.show()
+    plt.show()  # Display plot in window
 
 
 def main():
+    """
+    Main workflow: load CSV, compute statistics, filter data, and generate plots.
+    """
     print("=== Lab Data Graph Builder - prototype ===")
 
     # Folder where this script lives
