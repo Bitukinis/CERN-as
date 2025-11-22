@@ -63,18 +63,48 @@ def parse_numeric_string(value):
 def load_csv(filepath: str) -> pd.DataFrame:
     """
     Load a CSV file into a pandas DataFrame.
+    Auto-detects delimiter from common options: comma, semicolon, colon, tab, pipe.
+    Uses the delimiter that produces the most columns.
     Raises FileNotFoundError if file doesn't exist, or ValueError if read/parse fails or file is empty.
     """
     if not os.path.isfile(filepath):
         raise FileNotFoundError(f"File not found: {filepath}")
 
-    try:
-        df = pd.read_csv(filepath)
-    except Exception as e:
-        raise ValueError(f"Could not read CSV file: {e}")
-
+    # Try common delimiters and pick the one that produces the most columns
+    delimiters = [',', ';', ':', '\t', '|']
+    best_df = None
+    best_delim = ','
+    best_cols = 1
+    
+    for delim in delimiters:
+        try:
+            test_df = pd.read_csv(filepath, sep=delim)
+            if len(test_df.columns) > best_cols:
+                best_cols = len(test_df.columns)
+                best_delim = delim
+                best_df = test_df
+        except Exception:
+            continue
+    
+    # If no delimiter worked, try with default
+    if best_df is None:
+        try:
+            best_df = pd.read_csv(filepath, sep=',')
+        except Exception as e:
+            raise ValueError(f"Could not read CSV file with any common delimiter: {e}")
+    
+    df = best_df
+    
     if df.empty:
         raise ValueError("CSV file is empty.")
+    
+    # Show what delimiter was detected
+    delim_names = {',': 'comma', ';': 'semicolon', ':': 'colon', '\t': 'tab', '|': 'pipe'}
+    delim_name = delim_names.get(best_delim, repr(best_delim))
+    print(f"\nAuto-detected delimiter: {delim_name}")
+    print(f"Detected {len(df.columns)} columns and {len(df)} rows.")
+    print("\nPreview (first 6 rows):")
+    print(df.head(6))
 
     return df
 
@@ -163,11 +193,6 @@ def choose_axes(df: pd.DataFrame):
                 if i not in y_indices:
                     y_indices.append(i)
 
-            # Do not allow X column to be in Y list
-            y_indices = [i for i in y_indices if i != x_idx]
-            if not y_indices:
-                print("Y columns cannot be the same as X. Choose a different column.")
-                continue
 
             y_cols = [df.columns[i] for i in y_indices]
             break
@@ -425,15 +450,27 @@ def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
 
     # Handle 'between' operator specially (two inputs)
     if op == "between":
-        low_str = input(f"Enter lower bound (exclusive) for {filter_col}: ").strip() # lower bound
-        high_str = input(f"Enter upper bound (exclusive) for {filter_col}: ").strip() # upper bound
+        print("\nBetween operator: include bounds or exclude?")
+        print("1: Exclusive (> low AND < high)")
+        print("2: Inclusive (>= low AND <= high)")
+        inclusive_choice = input("Enter choice (1-2): ").strip() or "1"
+        inclusive = (inclusive_choice == "2")
+        
+        low_str = input(f"Enter lower bound for {filter_col}: ").strip()
+        high_str = input(f"Enter upper bound for {filter_col}: ").strip()
         try:
             low = float(low_str)
             high = float(high_str)
         except ValueError:
             print("Invalid bound values.")
             return df
-        mask = (col_data > low) & (col_data < high)
+        
+        if inclusive:
+            mask = (col_data >= low) & (col_data <= high)
+            bound_desc = f"between {low} and {high} (inclusive)"
+        else:
+            mask = (col_data > low) & (col_data < high)
+            bound_desc = f"between {low} and {high} (exclusive)"
     else:
         value_str = input(f"Enter value to compare {filter_col} {op} : ").strip()
         try:
@@ -459,7 +496,7 @@ def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
     filtered_df = df[mask].reset_index(drop=True)
     # Print an informative message depending on operator used
     if op == "between":
-        print(f"\nFiltered: {len(filtered_df)} of {len(df)} rows match {filter_col} between {low} and {high}")
+        print(f"\nFiltered: {len(filtered_df)} of {len(df)} rows match {filter_col} {bound_desc}")
     else:
         print(f"\nFiltered: {len(filtered_df)} of {len(df)} rows match {filter_col} {op} {value}")
     return filtered_df
@@ -484,9 +521,10 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     plot_type = {"1": "line", "2": "scatter", "3": "bar", "4": "histogram"}.get(plot_choice, "line")
     
     # Ask about trend line (for line/scatter only)
+    # Trend line choice: 0=None, 1=Linear, 2=Polynomial (keeps logic consistent below)
     trend_choice = None
     if plot_type in ["line", "scatter"]:
-        trend_choice = input("Add trend line? (1=No, 2=Linear, 3=Polynomial): ").strip() or "0"
+        trend_choice = input("Add trend line? (0=None, 1=Linear, 2=Polynomial): ").strip() or "0"
     
     # Ask about dual Y-axis (for line plots with multiple series)
     dual_axis = False
@@ -556,11 +594,21 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
         pos_choice = input("Enter position (0-9): ").strip() or "0"
         legend_pos = positions.get(pos_choice, "upper left")
     
-    # Convert X column to numeric using smart parsing; drop NaN values
+    # Convert X column to numeric using smart parsing; if X has no numeric values, treat as categorical
     try:
-        x = df[x_col].apply(parse_numeric_string)
+        x_parsed = df[x_col].apply(parse_numeric_string)
     except Exception as e:
         raise ValueError(f"Could not convert X column to numeric: {e}")
+
+    categorical_x = False
+    x_labels = None
+    if x_parsed.dropna().empty:
+        # No numeric X values -> categorical axis (use string labels)
+        categorical_x = True
+        x_labels = df[x_col].astype(str).tolist()
+        x = pd.Series(range(len(x_labels)))
+    else:
+        x = x_parsed
 
     # Create figure with main axis
     fig, ax1 = plt.subplots(figsize=(10, 6))
@@ -593,39 +641,39 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
             
             # Add trend line if requested
             if trend_choice == "1":
-                # Align numeric x and y values by removing rows where either is NaN
+                # Linear trend: align numeric x and y values and fit slope/intercept
                 valid_xy = pd.concat([x, y], axis=1).apply(pd.to_numeric, errors="coerce").dropna()
                 if len(valid_xy) > 1:
                     xv = valid_xy.iloc[:, 0].values
                     yv = valid_xy.iloc[:, 1].values
-                    # Fit linear trend: computes slope and intercept
                     slope, intercept = np.polyfit(xv, yv, 1)
                     p = np.poly1d([slope, intercept])
-                    # Generate smooth line from data min to max
                     x_trend = np.linspace(xv.min(), xv.max(), 100)
-                    current_ax.plot(x_trend, p(x_trend), "--", linewidth=2, alpha=0.8, 
+                    current_ax.plot(x_trend, p(x_trend), "--", linewidth=2, alpha=0.8,
                                    color=colors[idx], label=f"{y_col} trend")
-                    # Annotate slope/intercept on plot using axis coordinates (0-1 range)
                     txt = f"Slope: {slope:.3g}\nIntercept: {intercept:.3g}"
-                    # Vertical offset prevents label overlap between multiple series
                     y_offset = 0.95 - (idx * 0.08)
                     current_ax.text(0.02, y_offset, txt, transform=current_ax.transAxes,
                                     color=colors[idx], fontsize=10, fontweight='bold',
                                     bbox=dict(facecolor='white', alpha=0.75, edgecolor=colors[idx], linewidth=1.5))
             elif trend_choice == "2":
-                # Fit polynomial (degree 2) trend line
-                z = np.polyfit(x.dropna().index, y.dropna(), 2)
-                p = np.poly1d(z)
-                x_trend = np.linspace(x.min(), x.max(), 100)
-                current_ax.plot(x_trend, p(x_trend), "--", linewidth=2, alpha=0.8, 
-                               color=colors[idx], label=f"{y_col} poly fit")
+                # Polynomial (degree 2) trend: align and fit using numeric X values
+                valid_xy = pd.concat([x, y], axis=1).apply(pd.to_numeric, errors="coerce").dropna()
+                if len(valid_xy) > 2:
+                    xv = valid_xy.iloc[:, 0].values
+                    yv = valid_xy.iloc[:, 1].values
+                    z = np.polyfit(xv, yv, 2)
+                    p = np.poly1d(z)
+                    x_trend = np.linspace(xv.min(), xv.max(), 100)
+                    current_ax.plot(x_trend, p(x_trend), "--", linewidth=2, alpha=0.8,
+                                   color=colors[idx], label=f"{y_col} poly fit")
                 
         elif plot_type == "scatter":
             # Scatter plot with transparency (alpha) to show overlapping points; larger markers with edge
             current_ax.scatter(x, y, s=80, label=custom_labels[y_col], alpha=0.7, color=colors[idx], edgecolors='black', linewidth=0.5)
             
             if trend_choice == "1":
-                # Align and fit linear trend for scatter plot
+                # Linear trend for scatter: align numeric x and y values and fit
                 valid_xy = pd.concat([x, y], axis=1).apply(pd.to_numeric, errors="coerce").dropna()
                 if len(valid_xy) > 1:
                     xv = valid_xy.iloc[:, 0].values
@@ -633,7 +681,7 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
                     slope, intercept = np.polyfit(xv, yv, 1)
                     p = np.poly1d([slope, intercept])
                     x_trend = np.linspace(xv.min(), xv.max(), 100)
-                    current_ax.plot(x_trend, p(x_trend), "--", linewidth=2, alpha=0.8, 
+                    current_ax.plot(x_trend, p(x_trend), "--", linewidth=2, alpha=0.8,
                                    color=colors[idx], label=f"{y_col} trend")
                     txt = f"Slope: {slope:.3g}\nIntercept: {intercept:.3g}"
                     y_offset = 0.95 - (idx * 0.08)
@@ -641,16 +689,38 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
                                     color=colors[idx], fontsize=10, fontweight='bold',
                                     bbox=dict(facecolor='white', alpha=0.75, edgecolor=colors[idx], linewidth=1.5))
             elif trend_choice == "2":
-                z = np.polyfit(x.dropna().index, y.dropna(), 2)
-                p = np.poly1d(z)
-                x_trend = np.linspace(x.min(), x.max(), 100)
-                current_ax.plot(x_trend, p(x_trend), "--", linewidth=2, alpha=0.8, 
-                               color=colors[idx], label=f"{y_col} poly fit")
+                # Polynomial (degree 2) fit for scatter: use numeric X values
+                valid_xy = pd.concat([x, y], axis=1).apply(pd.to_numeric, errors="coerce").dropna()
+                if len(valid_xy) > 2:
+                    xv = valid_xy.iloc[:, 0].values
+                    yv = valid_xy.iloc[:, 1].values
+                    z = np.polyfit(xv, yv, 2)
+                    p = np.poly1d(z)
+                    x_trend = np.linspace(xv.min(), xv.max(), 100)
+                    current_ax.plot(x_trend, p(x_trend), "--", linewidth=2, alpha=0.8,
+                                   color=colors[idx], label=f"{y_col} poly fit")
                 
         elif plot_type == "bar":
-            # Bar chart: one bar per data point with edge colors for definition
-            current_ax.bar(range(len(y)), y, label=custom_labels[y_col], alpha=0.75, color=colors[idx], edgecolor='black', linewidth=1.2)
-            current_ax.set_xticks(range(len(y)))
+            # Bar chart: support categorical X (grouped bars) and numeric X
+            # Ensure Y is numeric
+            y_vals = pd.to_numeric(y, errors='coerce')
+            n = len(y_vals)
+            if categorical_x:
+                # Grouped bars: offset each series horizontally
+                base_pos = np.arange(n)
+                num_series = len(y_cols)
+                width = 0.8 / max(1, num_series)
+                # compute positions for this series
+                pos = base_pos - 0.4 + idx * width + width / 2
+                current_ax.bar(pos, y_vals, width=width, label=custom_labels[y_col], alpha=0.85, color=colors[idx], edgecolor='black', linewidth=1.0)
+                # set xticks on main axis (ax1)
+                if current_ax is ax1:
+                    ax1.set_xticks(base_pos)
+                    ax1.set_xticklabels(x_labels, rotation=45, ha='right')
+            else:
+                # Numeric X: plot using X values directly
+                current_ax.bar(x, y_vals, label=custom_labels[y_col], alpha=0.75, color=colors[idx], edgecolor='black', linewidth=1.2)
+                current_ax.set_xticks(x)
             
         elif plot_type == "histogram":
             # Histogram: distribution of Y values (bins=20 intervals) with edge color
@@ -698,14 +768,14 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     plt.tight_layout()  # Auto-adjust spacing to avoid label cutoff
     
     # User chooses whether to save plot to disk
-    save_choice = input("\nSave plot? (1=none, 2=PNG, 3=PDF): ").strip() or "1"
-    if save_choice in ["2", "3"]:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        ext = ".png" if save_choice == "2" else ".pdf"
+    save_choice = input("\nSave plot? (1=none, 2=PNG, 3=PDF): ").strip() or "1" # default no save
+    if save_choice in ["2", "3"]: # if user chose to save
+        script_dir = os.path.dirname(os.path.abspath(__file__)) # script directory
+        ext = ".png" if save_choice == "2" else ".pdf" # determine file extension
         # Filename includes timestamp (YYYYMMDD_HHMMSS) to avoid overwriting
-        filename = os.path.join(script_dir, f"plot_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}{ext}")
+        filename = os.path.join(script_dir, f"plot_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}{ext}") # generate filename
         plt.savefig(filename, dpi=300, bbox_inches='tight', facecolor='white')  # Higher DPI for quality
-        print(f"Plot saved to: {filename}")
+        print(f"Plot saved to: {filename}") # inform user of saved file
     
     plt.show()  # Display plot in window
 
@@ -713,6 +783,7 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
 def main():
     """
     Main workflow: load CSV, compute statistics, filter data, and generate plots.
+    Supports re-running last operation with stored settings.
     """
     print("=== Lab Data Graph Builder - prototype ===")
 
@@ -736,75 +807,99 @@ def main():
     if folder_path == "":
         folder_path = default_dir
 
+    # Store last settings for re-run functionality
+    last_settings = None
+
     while True:
-        try:
-            filepath = choose_csv_file(folder_path)
-        except Exception as e:
-            print(f"\nError selecting file: {e}")
-            return
-
-        # Try to load the CSV; if it fails, check heuristics and offer to run fix_csv.py
-        loaded = False
-        try:
-            df = load_csv(filepath)
-            loaded = True
-        except Exception as e:
-            print(f"\nInitial load failed: {e}")
-
-        if not loaded:
-            print("\nCould not load the selected CSV file. It may be corrupted or use non-standard separators.")
-            print("If your file requires preprocessing (e.g. separating columns), run your fixer tool manually and try again.")
-
-        if not loaded:
-            retry = input("Choose a different file? (Y to choose again, any other key to exit): ").strip().upper()
-            if retry == "Y":
-                print("Let's choose a different file.\n")
-                continue
-            else:
+        while True:
+            try:
+                filepath = choose_csv_file(folder_path)
+            except Exception as e:
+                print(f"\nError selecting file: {e}")
                 return
 
-        # If we reach here, df is loaded
-        print(f"\nFile selected: {filepath}")
-        print("\nFirst few rows of this file:")
-        print(df.head())
+            # Try to load the CSV; if it fails, check heuristics and offer to run fix_csv.py
+            loaded = False
+            try:
+                df = load_csv(filepath)
+                loaded = True
+            except Exception as e:
+                print(f"\nInitial load failed: {e}")
+
+            if not loaded:
+                print("\nCould not load the selected CSV file. It may be corrupted or use non-standard separators.")
+                print("If your file requires preprocessing (e.g. separating columns), run your fixer tool manually and try again.")
+
+            if not loaded:
+                retry = input("Choose a different file? (Y to choose again, any other key to exit): ").strip().upper()
+                if retry == "Y":
+                    print("Let's choose a different file.\n")
+                    continue
+                else:
+                    return
+
+            # If we reach here, df is loaded
+            print(f"\nFile selected: {filepath}")
+            print("\nFirst few rows of this file:")
+            print(df.head())
+            break
+
+        # Show updated columns
+        print("\n" + "=" * 50)
+        print("Updated columns in your data:")
+        for i, col in enumerate(df.columns):
+            print(f"{i}: {col}")
+        print("=" * 50)
+
+        # Show summary statistics
+        numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+        if numeric_cols:
+            show_summary_stats(df, numeric_cols)
+        
+        # Choose axes and plot
+        x_col, y_cols = choose_axes(df)
+
+        # Optionally select a contiguous row range to analyze
+        df = pick_row_range(df)
+
+        # Filter data by points of interest
+        df_filtered = filter_data(df, x_col, y_cols)
+
+        # Plot the data
+        plot_data(df_filtered, x_col, y_cols)
+
+        # Store settings for re-run
+        last_settings = {
+            'filepath': filepath,
+            'x_col': x_col,
+            'y_cols': y_cols
+        }
 
         print("\n" + "=" * 50)
-        proceed = input("Do you want to proceed using this file? (Y/N): ").strip().upper()
+        print("Options:")
+        print("1: Create new plot (different data/axes)")
+        print("2: Re-run last plot with same settings")
+        print("3: Exit")
+        choice = input("\nEnter choice (1-3): ").strip()
 
-        if proceed == "Y":
-            print("\nProceeding with the data...")
-            break
-        elif proceed == "N":
-            print("Let's choose a different file.\n")
+        if choice == "2" and last_settings:
+            print("\nRe-running with last settings...")
+            filepath = last_settings['filepath']
+            x_col = last_settings['x_col']
+            y_cols = last_settings['y_cols']
+            try:
+                df = load_csv(filepath)
+                df = pick_row_range(df)
+                df_filtered = filter_data(df, x_col, y_cols)
+                plot_data(df_filtered, x_col, y_cols)
+            except Exception as e:
+                print(f"Error in re-run: {e}")
+        elif choice == "1":
+            print("\nStarting new plot session...\n")
+            continue
         else:
-            print("Please enter Y or N.\n")
-
-    
-    # Show updated columns
-    print("\n" + "=" * 50)
-    print("Updated columns in your data:")
-    for i, col in enumerate(df.columns):
-        print(f"{i}: {col}")
-    print("=" * 50)
-
-    # Show summary statistics
-    numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
-    if numeric_cols:
-        show_summary_stats(df, numeric_cols)
-    
-    # Choose axes and plot
-    x_col, y_cols = choose_axes(df)
-
-    # Optionally select a contiguous row range to analyze
-    df = pick_row_range(df)
-
-    # Filter data by points of interest
-    df_filtered = filter_data(df, x_col, y_cols)
-
-    # Plot the data
-    plot_data(df_filtered, x_col, y_cols)
-
-    print("\nDone.")
+            print("\nDone.")
+            break
 
 
 if __name__ == "__main__":
