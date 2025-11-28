@@ -6,13 +6,13 @@ import matplotlib.pyplot as plt  # plotting library for charts
 import numpy as np            # numerical routines, arrays, and polynomial fits
 from datetime import datetime # timestamp filenames and parse/format dates
 
-#! Run this in terminal to open folder path:
+#! Run this in terminal to open folder path (This is the file path, different for everyone):
 
 # cd "c:\Users\augus\Desktop\Python\Augustinas_Mockevicius\Graph builder for lab data project" 
 
-#! To separate variable values by commas use:
+#! To auto separate columns by commas use this code:
 
-# python fix_csv.py Data.ex2.csv --group-by-header --replace-literal-tabs --inplace
+# python fix_csv.py [File name here] --group-by-header --replace-literal-tabs --inplace
 
 #! Run the graph builder script in terminal:
 
@@ -70,13 +70,13 @@ def parse_numeric_string(value):
                 return float(mant) * (10 ** exp)
             except Exception:
                 pass
-        # also accept forms like '3.72E+09' or '3.72e9' (float() will handle)
+        # Accepts '3.72E+09' or '3.72e9'
 
-    # Remove thousands separators (commas), but keep decimal point
+    # Remove commas, but keep decimal point
     if isinstance(value, str):
         value = value.replace(',', '')
 
-    # Try to parse as float (handles regular numbers and scientific notation like 1e-5)
+    # parse as float (handles regular numbers and scientific notation like 1e-5)
     try:
         return float(value)
     except Exception:
@@ -87,13 +87,13 @@ def load_csv(filepath: str) -> pd.DataFrame:
     """
     Load a CSV file into a pandas DataFrame.
     Auto-detects delimiter from common options: comma, semicolon, colon, tab, pipe.
-    Uses the delimiter that produces the most columns.
-    Raises FileNotFoundError if file doesn't exist, or ValueError if read/parse fails or file is empty.
+    Uses the delimiter.
+    FileNotFoundError if file doesn't exist, or ValueError if read/parse fails / file is empty.
     """
     if not os.path.isfile(filepath):
         raise FileNotFoundError(f"File not found: {filepath}")
 
-    # Try common delimiters and pick the one that produces the most columns
+    # Try common delimiters
     delimiters = [',', ';', ':', '\t', '|']
     best_df = None
     best_delim = ','
@@ -109,7 +109,7 @@ def load_csv(filepath: str) -> pd.DataFrame:
         except Exception:
             continue
     
-    # If no delimiter worked, try with default
+    # If no delimiter worked, try with ,
     if best_df is None:
         try:
             best_df = pd.read_csv(filepath, sep=',')
@@ -124,15 +124,12 @@ def load_csv(filepath: str) -> pd.DataFrame:
     # Show what delimiter was detected
     delim_names = {',': 'comma', ';': 'semicolon', ':': 'colon', '\t': 'tab', '|': 'pipe'}
     delim_name = delim_names.get(best_delim, repr(best_delim))
-    print(f"\nAuto-detected delimiter: {delim_name}")
-    print(f"Detected {len(df.columns)} columns and {len(df)} rows.")
-    print("\nPreview (first 6 rows):")
-    print(df.head(6))
-
+    print("="*40 + f"\nAuto-detected delimiter: {delim_name}")
+    print(f"Detected {len(df.columns)} columns and {len(df)} rows." + "\n" + "="*40)
     return df
 
 
-
+# choosing the CSV file
 def choose_csv_file(folder_path: str) -> str:
     """
     Interactive file picker: list all .csv files in folder and let user select by number.
@@ -141,7 +138,7 @@ def choose_csv_file(folder_path: str) -> str:
     if not os.path.isdir(folder_path):
         raise NotADirectoryError(f"Not a valid folder: {folder_path}")
 
-    print(f"\nLooking for CSV files in: {folder_path}")
+    print(f"" + "="*50 + f"\nLooking for CSV files in: {folder_path}")
 
     # List all .csv files in the folder
     csv_files = [f for f in os.listdir(folder_path) if f.lower().endswith(".csv")]
@@ -154,7 +151,7 @@ def choose_csv_file(folder_path: str) -> str:
         print(f"{i}: {fname}")
 
     while True:
-        choice = input("\nEnter the number of the CSV you want to use (To cancel: 'q', 'cancel', 'quit'): ").strip().lower()
+        choice = input("\nNumber of file to use ('q' to Quit): ").strip().lower()
 
         if choice in ["cancel", "q", "quit"]:
             print("\nProcess cancelled. Exiting...")
@@ -179,13 +176,14 @@ def choose_axes(df: pd.DataFrame):
     Prompt user to select X column (single) and Y column(s) (comma-separated, multiple allowed).
     Returns tuple: (x_col_name, [y_col_names]).
     """
-    print("\nColumns detected:")
+    print("\n\nColumns Found:")
     for i, col in enumerate(df.columns):
         print(f"{i}: {col}")
 
-    # User selects X axis column (single column only)
+    print("=" * 30)
+    # User selects X axis column
     while True:
-        x_choice = input("\nEnter the column number for the X axis: ").strip()
+        x_choice = input("Enter the column number for the X axis: ").strip()
         try:
             x_idx = int(x_choice)
             if 0 <= x_idx < len(df.columns):
@@ -220,22 +218,19 @@ def choose_axes(df: pd.DataFrame):
             y_cols = [df.columns[i] for i in y_indices]
             break
         except ValueError:
-            print("Could not get that. Use numbers separated by commas.")
+            print("Could not get that. Use numbers separated by commas.") # Try again if miss clicked
 
     return x_col, y_cols
 
 
 def show_summary_stats(df: pd.DataFrame, numeric_cols: list):
     """
-    Display summary statistics (min, max, mean, median, std) for numeric columns.
+    Display summary statistics (min, max, mean, median, std) for all columns.
     User chooses which statistics to display via comma-separated selection (e.g., 1,3,5).
     Optionally compute linear slope(s) (y = m*x + b) between a chosen X column and one or more Y columns.
     """
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 20)
     print("SUMMARY STATISTICS")
-    print("=" * 50)
-
-    print("\nWhich statistics would you like to see?")
     print("1: Minimum")
     print("2: Maximum")
     print("3: Mean")
@@ -245,8 +240,8 @@ def show_summary_stats(df: pd.DataFrame, numeric_cols: list):
     print("7: Compute slope(s) for chosen X and Y columns")
     print("\nEnter choice(s), comma-separated.")
     print("Or press Enter to skip statistics")
-
-    choice = input("\nEnter your choice: ").strip()
+    print("=" * 20)
+    choice = input("Enter your choice: ").strip()
     if choice == "":
         return
 
@@ -303,11 +298,11 @@ def show_summary_stats(df: pd.DataFrame, numeric_cols: list):
                 col_stats['std'] = data.std()
 
             # Print to console as before
-            print(f"\n{col}:")
+            print(f"\n{col}:" + "\n" + "-" * 30)
             for k, v in col_stats.items():
                 label = k.capitalize()
                 print(f"  {label}: {v:.6g}")
-
+            print("-"*30)
             stats_results[col] = col_stats
         except Exception as e:
             print(f"\n{col}: Could not compute statistics ({e})")
@@ -335,7 +330,7 @@ def show_summary_stats(df: pd.DataFrame, numeric_cols: list):
             except ValueError:
                 print("That is not a valid number. 'c' to cancel.")
 
-        # Choose Y axes (one or multiple)
+        # Choose Y axes
         while True:
             y_choice = input("Enter column number(s) for Y. 'c' to cancel: ").strip()
             if y_choice.lower() in ["c", "cancel"]:
@@ -395,10 +390,10 @@ def pick_row_range(df: pd.DataFrame) -> pd.DataFrame:
     """
     total = len(df)
     if total == 0:
-        print("\nNo rows available in the dataset.")
+        print("No rows available in the dataset.")
         return df
-
-    print(f"\nRows available: 1 - {total}")
+    print("=" * 50)
+    print(f"Rows available: 1 - {total}")
     choice = input("Would you like to graph a part of rows? (Y/N): ").strip().upper()
     if choice != "Y":
         return df
@@ -428,11 +423,8 @@ def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
     Filter data rows by a user-specified condition (e.g., column > value).
     Returns filtered DataFrame; if no filter chosen, returns full DataFrame unchanged.
     """
-    print("\n" + "=" * 50)
-    print("FILTER DATA (Points of Interest)")
     print("=" * 50)
-    
-    filter_choice = input("\nDo you want to filter data by some condition? (Y/N): ").strip().upper()
+    filter_choice = input("Filter Points of Interest? (Y/N): ").strip().upper()
     if filter_choice != "Y":
         return df
     
@@ -451,7 +443,7 @@ def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
     except ValueError:
         print("Invalid input.")
         return df
-    
+    print("\n" + "=" * 30)
     print("\nFilter operators:")
     print("1: > (greater than)")
     print("2: < (less than)")
@@ -460,8 +452,9 @@ def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
     print("5: == (equal to)")
     print("6: != (not equal to)")
     print("7: Between (Value range)")
+    print("\n" + "=" * 30)
     
-    op_choice = input("\nEnter operator (1-7): ").strip()
+    op_choice = input("Enter operator (1-7): ").strip()
     op_map = {"1": ">", "2": "<", "3": ">=", "4": "<=", "5": "==", "6": "!=", "7": "between"}
     op = op_map.get(op_choice)
     if not op:
@@ -530,11 +523,11 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     Plot selected X and Y columns with multiple plot types (line/scatter/bar/histogram).
     Supports trend lines (linear/polynomial), dual Y-axis, and plot saving (PNG/PDF).
     """
-    print(f"\nPlotting X: {x_col}")
-    print(f"Plotting Y columns: {', '.join(y_cols)}")
+    print("=" * 30 + "\n" + f"Plotting X: {x_col}")
+    print(f"Plotting Y columns: {', '.join(y_cols)}" + "\n" + "=" * 30)
 
     # User chooses plot visualization type
-    print("\nPlot type options:")
+    print("Plot types:")
     print("1: Line plot")
     print("2: Scatter plot")
     print("3: Bar chart")
@@ -542,25 +535,51 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     
     plot_choice = input("\nEnter plot type (1-4): ").strip() or "1"
     plot_type = {"1": "line", "2": "scatter", "3": "bar", "4": "histogram"}.get(plot_choice, "line")
-    
+
     # Ask about trend line (for line/scatter only)
     # Trend line choice: 0=None, 1=Linear, 2=Polynomial (keeps logic consistent below)
     trend_choice = None
     if plot_type in ["line", "scatter"]:
         trend_choice = input("Add trend line? (0=None, 1=Linear, 2=Polynomial): ").strip() or "0"
     
-    # Ask about dual Y-axis (for line plots with multiple series)
+    # Ask about dual Y-axis (for line/scatter plots with multiple series)
     dual_axis = False
+    right_axis_cols = []  # Y columns assigned to right axis
     y_axis_ranges = {}  # store min/max for each Y column
-    if len(y_cols) > 1 and plot_type == "line":
+    if len(y_cols) > 1 and plot_type in ["line", "scatter"]:
         dual_choice = input("Use dual Y-axis for different scales? (Y/N): ").strip().upper()
         dual_axis = (dual_choice == "Y")
         
-        # If dual axis enabled, allow user to set custom ranges for each axis
+        # If dual axis enabled, let user choose which columns go on right axis
         if dual_axis:
-            print("\nSet Y-axis ranges (leave blank to auto-fit):")
+            print("\nSelect which Y columns go on the RIGHT axis:")
+            print("Available Y columns:")
             for idx, y_col in enumerate(y_cols):
-                print(f"\nAxis {idx + 1}: {y_col}")
+                print(f"{idx}: {y_col}")
+            
+            right_choice = input("\nEnter column numbers for RIGHT axis (comma-separated, or leave blank for default split): ").strip()
+            if right_choice:
+                try:
+                    right_indices = [int(x.strip()) for x in right_choice.split(",")]
+                    right_axis_cols = [y_cols[i] for i in right_indices if 0 <= i < len(y_cols)]
+                    if not right_axis_cols:
+                        print("  No valid right-axis columns, using default: first on left, rest on right")
+                        right_axis_cols = y_cols[1:]
+                except Exception:
+                    print("  Invalid input, using default: first on left, rest on right")
+                    right_axis_cols = y_cols[1:]
+            else:
+                # Default: first column on left, rest on right
+                right_axis_cols = y_cols[1:]
+            
+            print(f"\nLeft axis: {[c for c in y_cols if c not in right_axis_cols]}")
+            print(f"Right axis: {right_axis_cols}")
+            
+            # Allow user to set custom ranges for each axis
+            print("\nSet Y-axis ranges:")
+            for idx, y_col in enumerate(y_cols):
+                side = "RIGHT" if y_col in right_axis_cols else "LEFT"
+                print(f"\n{y_col} ({side} axis):")
                 y_min_str = input(f"  Min value (blank for auto): ").strip()
                 y_max_str = input(f"  Max value (blank for auto): ").strip()
                 
@@ -577,22 +596,23 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
                 y_axis_ranges[y_col] = (y_min, y_max)
     
     # Ask about legend customization
-    print("\nLegend options:")
-    print("1: Default (upper left)")
-    print("2: Custom position")
+    print("=" * 50)
+    print("Legend:")
+    print("1: Default - upper left")
+    print("2: Custom position / label")
     print("3: Custom labels")
     print("4: Hide legend")
     legend_choice = input("Enter choice (1-4): ").strip() or "1"
     
     # Ask for custom chart title
-    custom_title = input("\nEnter custom chart title (or leave blank for default): ").strip()
+    custom_title = input("\nEnter custom chart title: ").strip()
     if not custom_title:
         custom_title = "Laboratory Data Analysis"
     
     # Handle custom legend labels
     custom_labels = {}
     if legend_choice == "3":
-        print("\nEnter custom labels for each Y column (leave blank to keep original):")
+        print("\nEnter custom labels for each Y column (blank for original):")
         for y_col in y_cols:
             label = input(f"Label for '{y_col}': ").strip()
             if label:
@@ -611,7 +631,7 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
             "7": "lower left", "8": "lower center", "9": "lower right",
             "0": "upper left"
         }
-        print("\nLegend position options:")
+        print("\nLegend positions:")
         for k, v in positions.items():
             print(f"{k}: {v}")
         pos_choice = input("Enter position (0-9): ").strip() or "0"
@@ -649,20 +669,20 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
             print(f"Skipping column {y_col}: could not convert to numeric. Error: {e}")
             continue
         
-        # Select axis: use ax2 (twin axis) for 2nd+ series if dual_axis is enabled
+        # Select axis: use ax2 (right) for columns in right_axis_cols, otherwise use ax1 (left)
         current_ax = ax1
-        if dual_axis and idx > 0:
+        if dual_axis and y_col in right_axis_cols:
             if ax2 is None:
                 ax2 = ax1.twinx()  # Create second Y-axis sharing same X-axis
             current_ax = ax2
 
         # Plot based on type
         if plot_type == "line":
-            # Line plot with markers for clarity; larger linewidth and markersize
+            # Line plot
             current_ax.plot(x, y, marker="o", markersize=6, linestyle="-", linewidth=2.5, 
                            label=custom_labels[y_col], color=colors[idx])
             
-            # Add trend line if requested
+            # Add trend line
             if trend_choice == "1":
                 # Linear trend: align numeric x and y values and fit slope/intercept
                 valid_xy = pd.concat([x, y], axis=1).apply(pd.to_numeric, errors="coerce").dropna()
@@ -692,8 +712,8 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
                                    color=colors[idx], label=f"{y_col} poly fit")
                 
         elif plot_type == "scatter":
-            # Scatter plot with transparency (alpha) to show overlapping points; larger markers with edge
-            current_ax.scatter(x, y, s=80, label=custom_labels[y_col], alpha=0.7, color=colors[idx], edgecolors='black', linewidth=0.5)
+            # Scatter plot
+            current_ax.scatter(x, y, s=80, marker='x', color=colors[idx], label=custom_labels[y_col], alpha=1.0, linewidths=2)
             
             if trend_choice == "1":
                 # Linear trend for scatter: align numeric x and y values and fit
@@ -724,7 +744,7 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
                                    color=colors[idx], label=f"{y_col} poly fit")
                 
         elif plot_type == "bar":
-            # Bar chart: support categorical X (grouped bars) and numeric X
+            # Bar chart: support categorical X and numeric X, with value annotations
             # Ensure Y is numeric
             y_vals = pd.to_numeric(y, errors='coerce')
             n = len(y_vals)
@@ -735,15 +755,25 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
                 width = 0.8 / max(1, num_series)
                 # compute positions for this series
                 pos = base_pos - 0.4 + idx * width + width / 2
-                current_ax.bar(pos, y_vals, width=width, label=custom_labels[y_col], alpha=0.85, color=colors[idx], edgecolor='black', linewidth=1.0)
+                bars = current_ax.bar(pos, y_vals, width=width, label=custom_labels[y_col], alpha=0.85, color=colors[idx], edgecolor='black', linewidth=1.0)
                 # set xticks on main axis (ax1)
                 if current_ax is ax1:
                     ax1.set_xticks(base_pos)
                     ax1.set_xticklabels(x_labels, rotation=45, ha='right')
+                # annotate values above bars
+                for rect, val in zip(bars, y_vals):
+                    if not np.isnan(val):
+                        current_ax.text(rect.get_x() + rect.get_width()/2, rect.get_height(), f"{val:.3g}",
+                                        ha='center', va='bottom', fontsize=9, color='black')
             else:
                 # Numeric X: plot using X values directly
-                current_ax.bar(x, y_vals, label=custom_labels[y_col], alpha=0.75, color=colors[idx], edgecolor='black', linewidth=1.2)
+                bars = current_ax.bar(x, y_vals, label=custom_labels[y_col], alpha=0.75, color=colors[idx], edgecolor='black', linewidth=1.2)
                 current_ax.set_xticks(x)
+                # annotate values above bars
+                for rect, val in zip(bars, y_vals):
+                    if not np.isnan(val):
+                        current_ax.text(rect.get_x() + rect.get_width()/2, rect.get_height(), f"{val:.3g}",
+                                        ha='center', va='bottom', fontsize=9, color='black')
             
         elif plot_type == "histogram":
             # Histogram: distribution of Y values (bins=20 intervals) with edge color
@@ -755,24 +785,42 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
         # Single Y-axis: label lists all Y columns
         ax1.set_ylabel(", ".join(y_cols), fontsize=12, fontweight='bold')
     else:
-        # Dual Y-axis: first series uses ax1 (left), others use ax2 (right)
-        ax1.set_ylabel(y_cols[0], fontsize=12, fontweight='bold', color=colors[0])
-        ax1.tick_params(axis='y', labelcolor=colors[0], labelsize=10)
+        # Dual Y-axis: left axis shows columns NOT in right_axis_cols, right axis shows right_axis_cols
+        left_cols = [c for c in y_cols if c not in right_axis_cols]
+        left_label = ", ".join(left_cols) if left_cols else ""
+        right_label = ", ".join(right_axis_cols) if right_axis_cols else ""
+        
+        if left_label:
+            # Use neutral color for left axis label to avoid confusion
+            ax1.set_ylabel(left_label, fontsize=12, fontweight='bold', color='black')
+            ax1.tick_params(axis='y', labelcolor='black', labelsize=10)
+        
+        if ax2 and right_label:
+            # Use neutral color for right axis label to avoid confusion
+            ax2.set_ylabel(right_label, fontsize=12, fontweight='bold', color='black')
+            ax2.tick_params(axis='y', labelcolor='black', labelsize=10)
+        
+        # Apply custom Y-axis ranges if specified (for all left/right columns)
+        for y_col in left_cols:
+            if y_col in y_axis_ranges:
+                y_min, y_max = y_axis_ranges[y_col]
+                if y_min is not None or y_max is not None:
+                    ax1.set_ylim(y_min, y_max)
+                    break  # Apply first valid range to left axis
+        
         if ax2:
-            ax2.set_ylabel(", ".join(y_cols[1:]), fontsize=12, fontweight='bold', color=colors[1])
-            ax2.tick_params(axis='y', labelcolor=colors[1], labelsize=10)
-        
-        # Apply custom Y-axis ranges if specified
-        if y_cols[0] in y_axis_ranges:
-            y_min, y_max = y_axis_ranges[y_cols[0]]
-            if y_min is not None or y_max is not None:
-                ax1.set_ylim(y_min, y_max)
-        
-        if ax2 and len(y_cols) > 1 and y_cols[1] in y_axis_ranges:
-            y_min, y_max = y_axis_ranges[y_cols[1]]
-            if y_min is not None or y_max is not None:
-                ax2.set_ylim(y_min, y_max)
+            for y_col in right_axis_cols:
+                if y_col in y_axis_ranges:
+                    y_min, y_max = y_axis_ranges[y_col]
+                    if y_min is not None or y_max is not None:
+                        ax2.set_ylim(y_min, y_max)
+                        break  # Apply first valid range to right axis
     
+    # If X is categorical, apply labels for all plot types
+    if 'categorical_x' in locals() and categorical_x and x_labels:
+        ax1.set_xticks(np.arange(len(x_labels)))
+        ax1.set_xticklabels(x_labels, rotation=45, ha='right')
+
     # Improve title and styling
     ax1.set_title(custom_title, fontsize=14, fontweight='bold', pad=20)
     ax1.grid(True, alpha=0.4, linestyle='--', linewidth=0.7)  # Enhanced grid: dashed lines, better visibility
@@ -791,7 +839,9 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     plt.tight_layout()  # Auto-adjust spacing to avoid label cutoff
     
     # User chooses whether to save plot to disk
-    save_choice = input("\nSave plot? (0=none, 1=PNG, 2=PDF): ").strip() or "1" # default no save
+    print("=" * 37)
+    save_choice = input("Save plot? (0=none, 1=PNG, 2=PDF): ").strip() or "1" # default - no save
+    print("=" * 15 + " Enjoy " + "=" * 15)
     if save_choice in ["1", "2"]: # if user chose to save
         script_dir = os.path.dirname(os.path.abspath(__file__)) # script directory
         ext = ".png" if save_choice == "1" else ".pdf" # determine file extension
@@ -806,10 +856,7 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
 def main():
     """
     Main workflow: load CSV, compute statistics, filter data, and generate plots.
-    Supports re-running last operation with stored settings.
     """
-    print("=== Lab Data Graph Builder - prototype ===")
-
     # Folder where this script lives
     script_dir = os.path.dirname(os.path.abspath(__file__))
     separated_dir = os.path.join(script_dir, "Seperated")
@@ -817,16 +864,18 @@ def main():
     # If Seperated folder exists and has CSV files, use it as default; otherwise use script directory
     if os.path.isdir(separated_dir) and any(f.lower().endswith('.csv') for f in os.listdir(separated_dir)):
         default_dir = separated_dir
-        print(f"\nDefault folder: {separated_dir} (preprocessed files)")
+        print("\n"*8 + "=" * 120)
+        print(f"Default folder: {separated_dir}")
+        print("=" * 120)
     else:
         default_dir = script_dir
-        print(f"\nDefault folder: {script_dir} (original files)")
-
+        print("\n"*8 + "=" * 120)
+        print(f"Default folder: {script_dir}")
+        print("=" * 120)
     folder_path = input(
-        "\nEnter folder path containing your CSV files\n"
+        "\n===============> Graph Builder <===============" + "\nEnter folder path containing your CSV files\n"
         f"(leave empty to use the default folder above): "
     ).strip()
-
     if folder_path == "":
         folder_path = default_dir
 
@@ -863,19 +912,19 @@ def main():
 
             # If we reach here, df is loaded
             print(f"\nFile selected: {filepath}")
-            print("\nFirst few rows of this file:")
+            print("\n" + "=" * 80)
             print(df.head())
+            print("=" * 80)
             break
 
-        # Show updated columns
-        print("\n" + "=" * 50)
-        print("Updated columns in your data:")
-        for i, col in enumerate(df.columns):
-            print(f"{i}: {col}")
-        print("=" * 50)
-
         # Show summary statistics
-        numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+        # Identify columns that can be parsed as numeric (not just pure numeric types)
+        numeric_cols = []
+        for col in df.columns:
+            # Check if at least one value in the column can be parsed as numeric
+            if df[col].apply(parse_numeric_string).notna().any():
+                numeric_cols.append(col)
+        
         if numeric_cols:
             show_summary_stats(df, numeric_cols)
         
@@ -899,14 +948,13 @@ def main():
         }
 
         print("\n" + "=" * 50)
-        print("Options:")
         print("1: Create new plot (different data/axes)")
         print("2: Re-run last plot with same settings")
         print("3: Exit")
         choice = input("\nEnter choice (1-3): ").strip()
 
         if choice == "2" and last_settings:
-            print("\nRe-running with last settings...")
+            print("\nRe-running with last settings")
             filepath = last_settings['filepath']
             x_col = last_settings['x_col']
             y_cols = last_settings['y_cols']
