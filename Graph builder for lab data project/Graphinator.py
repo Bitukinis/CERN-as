@@ -12,11 +12,11 @@ from datetime import datetime # timestamp filenames and parse/format dates
 
 #! To auto separate columns by commas use this code:
 
-# python fix_csv.py [File name here] --group-by-header --replace-literal-tabs --inplace
+# python Commainator.py [File name here] --group-by-header --replace-literal-tabs --inplace
 
 #! Run the graph builder script in terminal:
 
-# python GraphBuilder.py
+# python Graphinator.py
 
 
 
@@ -873,7 +873,7 @@ def main():
         print(f"Default folder: {script_dir}")
         print("=" * 120)
     folder_path = input(
-        "\n===============> Graph Builder <===============" + "\nEnter folder path containing your CSV files\n"
+        "\n=============> Graphinator 3000 <=============" + "\nEnter folder path containing your CSV files\n"
         f"(leave empty to use the default folder above): "
     ).strip()
     if folder_path == "":
