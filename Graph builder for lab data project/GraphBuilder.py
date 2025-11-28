@@ -35,11 +35,18 @@ def parse_numeric_string(value):
     if not isinstance(value, str):
         return None
     
-    value = value.strip()
+    # Normalize whitespace (including NBSP) and strip
+    if isinstance(value, str):
+        value = value.replace('\u00A0', ' ').strip()
+    value = value.strip() if isinstance(value, str) else value
     
     if not value:
         return None
     
+    # Common missing-value markers
+    if isinstance(value, str) and value in ['-', '–', '—', 'na', 'n/a', '']:
+        return None
+
     # Handle percentage (e.g., "95%", "95.5%")
     if value.endswith('%'):
         try:
@@ -49,14 +56,30 @@ def parse_numeric_string(value):
     
     # Remove currency symbols ($, €, £, ¥, etc.)
     value = re.sub(r'[\$€£¥₹]', '', value)
-    
+
+    # Convert common multiplication/scientific formats like '3.72*10^9' or '3.72×10^9' to '3.72e9'
+    if isinstance(value, str):
+        # remove spaces used as thousands separators
+        value_no_space = value.replace(' ', '').replace('\u00A0', '')
+        # pattern: xxx * 10^exp  (allow *, ×)
+        m = re.match(r'^([+-]?\d[\d\.,]*)\s*(?:\*|×|x)\s*10\^?([+-]?\d+)$', value_no_space, flags=re.IGNORECASE)
+        if m:
+            mant = m.group(1).replace(',', '')
+            exp = int(m.group(2))
+            try:
+                return float(mant) * (10 ** exp)
+            except Exception:
+                pass
+        # also accept forms like '3.72E+09' or '3.72e9' (float() will handle)
+
     # Remove thousands separators (commas), but keep decimal point
-    value = value.replace(',', '')
-    
+    if isinstance(value, str):
+        value = value.replace(',', '')
+
     # Try to parse as float (handles regular numbers and scientific notation like 1e-5)
     try:
         return float(value)
-    except ValueError:
+    except Exception:
         return None
 
 
@@ -768,10 +791,10 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     plt.tight_layout()  # Auto-adjust spacing to avoid label cutoff
     
     # User chooses whether to save plot to disk
-    save_choice = input("\nSave plot? (1=none, 2=PNG, 3=PDF): ").strip() or "1" # default no save
-    if save_choice in ["2", "3"]: # if user chose to save
+    save_choice = input("\nSave plot? (0=none, 1=PNG, 2=PDF): ").strip() or "1" # default no save
+    if save_choice in ["1", "2"]: # if user chose to save
         script_dir = os.path.dirname(os.path.abspath(__file__)) # script directory
-        ext = ".png" if save_choice == "2" else ".pdf" # determine file extension
+        ext = ".png" if save_choice == "1" else ".pdf" # determine file extension
         # Filename includes timestamp (YYYYMMDD_HHMMSS) to avoid overwriting
         filename = os.path.join(script_dir, f"plot_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}{ext}") # generate filename
         plt.savefig(filename, dpi=300, bbox_inches='tight', facecolor='white')  # Higher DPI for quality
