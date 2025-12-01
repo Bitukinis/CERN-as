@@ -518,6 +518,49 @@ def filter_data(df: pd.DataFrame, x_col: str, y_cols: list) -> pd.DataFrame:
     return filtered_df
 
 
+def sample_data_points(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Sample data by plotting every Nth point (useful for large datasets).
+    Returns sampled DataFrame or full DataFrame if sampling skipped.
+    """
+    total = len(df)
+    if total == 0:
+        return df
+    
+    print("\n" + "=" * 50)
+    print("DATA POINT SAMPLING (for large datasets)")
+    print("=" * 50)
+    print(f"Total data points: {total}")
+    
+    # Only prompt if dataset is reasonably large
+    if total < 100:
+        print("Dataset is small enough to plot all points.")
+        return df
+    
+    choice = input("\nPlot every Nth point to reduce density? (Y/N): ").strip().upper()
+    if choice != "Y":
+        return df
+    
+    while True:
+        step_str = input(f"Enter step size: ").strip()
+        try:
+            step = int(step_str)
+            if step < 1:
+                print("Step must be at least 1.")
+                continue
+            if step >= total:
+                print(f"Step too large. Must be less than {total}.")
+                continue
+            break
+        except ValueError:
+            print("Invalid input. Enter an integer.")
+    
+    # Sample every Nth row using iloc with step
+    sampled = df.iloc[::step].reset_index(drop=True)
+    print(f"Sampled {len(sampled)} points (every {step} point(s)) from {total} total.")
+    return sampled
+
+
 def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     """
     Plot selected X and Y columns with multiple plot types (line/scatter/bar/histogram).
@@ -844,9 +887,13 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     print("=" * 15 + " Enjoy " + "=" * 15)
     if save_choice in ["1", "2"]: # if user chose to save
         script_dir = os.path.dirname(os.path.abspath(__file__)) # script directory
+        # Create "Saved Graphs" folder if it doesn't exist
+        saved_graphs_dir = os.path.join(script_dir, "Saved Graphs")
+        os.makedirs(saved_graphs_dir, exist_ok=True)
+        
         ext = ".png" if save_choice == "1" else ".pdf" # determine file extension
         # Filename includes timestamp (YYYYMMDD_HHMMSS) to avoid overwriting
-        filename = os.path.join(script_dir, f"plot_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}{ext}") # generate filename
+        filename = os.path.join(saved_graphs_dir, f"plot_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}{ext}") # generate filename
         plt.savefig(filename, dpi=300, bbox_inches='tight', facecolor='white')  # Higher DPI for quality
         print(f"Plot saved to: {filename}") # inform user of saved file
     
@@ -937,8 +984,11 @@ def main():
         # Filter data by points of interest
         df_filtered = filter_data(df, x_col, y_cols)
 
+        # Sample data points (plot every Nth point for large datasets)
+        df_sampled = sample_data_points(df_filtered)
+
         # Plot the data
-        plot_data(df_filtered, x_col, y_cols)
+        plot_data(df_sampled, x_col, y_cols)
 
         # Store settings for re-run
         last_settings = {
@@ -962,7 +1012,8 @@ def main():
                 df = load_csv(filepath)
                 df = pick_row_range(df)
                 df_filtered = filter_data(df, x_col, y_cols)
-                plot_data(df_filtered, x_col, y_cols)
+                df_sampled = sample_data_points(df_filtered)
+                plot_data(df_sampled, x_col, y_cols)
             except Exception as e:
                 print(f"Error in re-run: {e}")
         elif choice == "1":
