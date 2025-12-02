@@ -8,7 +8,7 @@ from datetime import datetime # timestamp filenames and parse/format dates
 
 #! Run this in terminal to open folder path (This is the file path, different for everyone):
 
-# cd "c:\Users\augus\Desktop\Python\Augustinas_Mockevicius\Graph builder for lab data project" 
+# cd "c:\Users\augus\Desktop\Python\Augustinas_Mockevicius" 
 
 #! To auto separate columns by commas use this code:
 
@@ -56,6 +56,21 @@ def parse_numeric_string(value):
     
     # Remove currency symbols ($, €, £, ¥, etc.)
     value = re.sub(r'[\$€£¥₹]', '', value)
+
+    # Remove ANY alphabetic unit suffixes (kHz, MHz, GHz, dB, V, mV, kV, A, mA, W, kW, Hz, etc.)
+    # This strips all letters/units from data rows, leaving only the header row with units intact
+    if isinstance(value, str):
+        # Match: optional sign, digits with optional decimal/comma, followed by ANY alphabetic suffix
+        # This pattern captures numbers with ANY letter suffix and extracts just the number
+        unit_pattern = r'^([+-]?\d[\d\.,]*)\s*[a-zA-Z°µ]+$'
+        m = re.match(unit_pattern, value)
+        if m:
+            numeric_part = m.group(1)
+            # Remove commas from numeric part
+            value = numeric_part.replace(',', '')
+        else:
+            # No unit suffix found, proceed with original value
+            pass
 
     # Convert common multiplication/scientific formats like '3.72*10^9' or '3.72×10^9' to '3.72e9'
     if isinstance(value, str):
@@ -579,6 +594,15 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
     plot_choice = input("\nEnter plot type (1-4): ").strip() or "1"
     plot_type = {"1": "line", "2": "scatter", "3": "bar", "4": "histogram"}.get(plot_choice, "line")
 
+    # Ask about axis scaling (logarithmic, semi-log, etc.)
+    print("\nAxis scaling:")
+    print("1: Linear (default)")
+    print("2: Log-log (both axes logarithmic)")
+    print("3: Semi-log X (X logarithmic, Y linear)")
+    print("4: Semi-log Y (X linear, Y logarithmic)")
+    scale_choice = input("Enter scale type (1-4): ").strip() or "1"
+    scale_type = {"1": "linear", "2": "loglog", "3": "semilogx", "4": "semilogy"}.get(scale_choice, "linear")
+
     # Ask about trend line (for line/scatter only)
     # Trend line choice: 0=None, 1=Linear, 2=Polynomial (keeps logic consistent below)
     trend_choice = None
@@ -864,6 +888,19 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
         ax1.set_xticks(np.arange(len(x_labels)))
         ax1.set_xticklabels(x_labels, rotation=45, ha='right')
 
+    # Apply axis scaling (logarithmic, semi-log, etc.)
+    if scale_type == "loglog":
+        ax1.set_xscale('log')
+        ax1.set_yscale('log')
+        if ax2:
+            ax2.set_yscale('log')
+    elif scale_type == "semilogx":
+        ax1.set_xscale('log')
+    elif scale_type == "semilogy":
+        ax1.set_yscale('log')
+        if ax2:
+            ax2.set_yscale('log')
+
     # Improve title and styling
     ax1.set_title(custom_title, fontsize=14, fontweight='bold', pad=20)
     ax1.grid(True, alpha=0.4, linestyle='--', linewidth=0.7)  # Enhanced grid: dashed lines, better visibility
@@ -892,8 +929,23 @@ def plot_data(df: pd.DataFrame, x_col: str, y_cols: list):
         os.makedirs(saved_graphs_dir, exist_ok=True)
         
         ext = ".png" if save_choice == "1" else ".pdf" # determine file extension
-        # Filename includes timestamp (YYYYMMDD_HHMMSS) to avoid overwriting
-        filename = os.path.join(saved_graphs_dir, f"plot_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}{ext}") # generate filename
+        
+        # Determine prefix based on plot type
+        prefix_map = {"line": "Lin.", "scatter": "Sc.", "bar": "Bar.", "histogram": "Hist."}
+        prefix = prefix_map.get(plot_type, "")
+        
+        # Ask user for custom filename (default: use chart title)
+        default_name = custom_title.replace(" ", ".").replace("/", "-").replace("\\", "-")
+        user_filename = input(f"\nEnter filename (blank for '{default_name}'): ").strip()
+        if not user_filename:
+            user_filename = default_name
+        
+        # Remove extension if user added it (we'll add the correct one)
+        user_filename = user_filename.replace(".png", "").replace(".pdf", "")
+        
+        # Generate final filename with prefix and timestamp to avoid overwriting
+        timestamp = pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')
+        filename = os.path.join(saved_graphs_dir, f"{prefix}{user_filename}_{timestamp}{ext}")
         plt.savefig(filename, dpi=300, bbox_inches='tight', facecolor='white')  # Higher DPI for quality
         print(f"Plot saved to: {filename}") # inform user of saved file
     
