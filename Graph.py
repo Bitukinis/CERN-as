@@ -12,11 +12,11 @@ from datetime import datetime # timestamp filenames and parse/format dates
 
 #! To auto separate columns by commas use this code:
 
-# python Commainator.py [File name here] --group-by-header --replace-literal-tabs --inplace
+# python Seperate.py [File name here] --group-by-header --replace-literal-tabs --inplace
 
 #! Run the graph builder script in terminal:
 
-# python Graphinator.py
+# python Graph.py
 
 
 
